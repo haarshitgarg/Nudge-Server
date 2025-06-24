@@ -1,0 +1,24 @@
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# macOS system files
+.DS_Store
+
+# User-specific files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Other
+.idea/
+.vscode/ 
