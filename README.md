@@ -1,4 +1,4 @@
-# Nudge Server
+# Nudge Navigation Server
 
 A Swift server application built with Swift Package Manager.
 
@@ -32,7 +32,8 @@ Nudge-server/
 ├── Sources/
 │   └── ServerSrc/
 │       ├── main_server.swift  # Main server entry point
-│       └── TestServer.swift   # Test server implementation
+│       ├── NavServer.swift    # Nudge Navigation Server implementation
+│       └── TestServer.swift   # Test server implementation (can be removed if no longer used)
 └── Tests/
     └── CLIToolTests/
         └── CLIToolTests.swift
@@ -40,7 +41,7 @@ Nudge-server/
 
 ## Current Functionality
 
-The server provides a basic HTTP server implementation with test endpoints.
+The Nudge Navigation Server provides functionality to interact with the macOS system, specifically to open applications using their bundle identifiers. It exposes a tool named `open_application` for this purpose.
 
 ## Development
 
