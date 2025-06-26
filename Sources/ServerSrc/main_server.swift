@@ -9,15 +9,16 @@ struct Application {
     static let logger = Logger(label: "Application")
     
     static func main() async throws {
+        logger.info("Running the Nudge Nav Server in stdio mode")
         let server = Server(
-            name: "Test Server", 
+            name: "Nudge Navigation Server", 
             version: "1.0.0", 
             capabilities: .init( 
                 tools: .init(listChanged: true)
             )
         )
         let transport = StdioTransport()
-        let service = TestServer(server:server, transport: transport, logger: logger)
+        let service = NavServer(server:server, transport: transport, logger: logger)
         await service.setup()
         
         let serviceGroup = ServiceGroup(
