@@ -56,16 +56,12 @@ struct NavServer: Service {
                     
                     logger.info("Extracted bundle identifier: \(bundleIdentifier)")
 
-                    if await self.openApplication(bundleIdentifier: bundleIdentifier) {
-                        logger.info("Successfully launched application \(bundleIdentifier).")
-                        return CallTool.Result(content: [.text("Application \(bundleIdentifier) is now open")], isError: false)
-                    } else {
-                        logger.error("Failed to launch application \(bundleIdentifier).")
-                        return CallTool.Result(content: [.text("Bundle identifier is incorrect")], isError: true)
-                    }
+                    try await openApplication(bundleIdentifier: bundleIdentifier) 
+                    logger.info("Opened application: \(bundleIdentifier)")
+                    return CallTool.Result(content: [.text("Application \(bundleIdentifier) is now open")], isError: false)
                 } catch {
-                    logger.error("Failed to decode arguments for open_application: \(error)")
-                    return CallTool.Result(content: [.text("Invalid arguments format")], isError: true)
+                    logger.error("Returned with error: \(error.localizedDescription)")
+                    return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
                 }
 
             default:
@@ -83,30 +79,4 @@ struct NavServer: Service {
         print("Stoppint the serveer after timeout")
     }
 
-    // MARK: Application related stuff
-    private func openApplication(bundleIdentifier: String) async -> Bool {
-        logger.info("Checking accessibility permissions.")
-        guard AXIsProcessTrusted() else {
-            logger.error("Accessibility permissions are not granted. Please grant them in System Settings.")
-            return false
-        }
-
-        logger.info("Permissions granted. Attempting to launch \(bundleIdentifier).")
-        
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            logger.error("Could not find application with bundle ID: \(bundleIdentifier).")
-            return false
-        }
-
-        let configuration = NSWorkspace.OpenConfiguration()
-
-        do {
-            _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
-            logger.info("Successfully initiated launch for application: \(bundleIdentifier)")
-            return true
-        } catch {
-            logger.error("Failed to launch application \(bundleIdentifier) with error: \(error)")
-            return false
-        }
-    }
 }
