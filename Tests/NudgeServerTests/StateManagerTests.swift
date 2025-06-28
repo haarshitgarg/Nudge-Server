@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import NudgeServer
 
 final class StateManagerTests: XCTestCase {
@@ -32,5 +33,24 @@ final class StateManagerTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error type: \(type(of: error))")
         }
+    }
+
+    func testGetUIStateTree_WhenTreeExists() async throws {
+        let appIdentifier = "com.apple.dt.Xcode"
+        try await stateManager.updateUIStateTree(applicationIdentifier: appIdentifier)
+        
+        let stateTree = try await stateManager.getUIStateTree(applicationIdentifier: appIdentifier)
+        XCTAssertEqual(stateTree.applicationIdentifier, appIdentifier)
+        XCTAssertFalse(stateTree.isStale)
+    }
+
+    func testGetXcodeTreeAndCheckForWindow() async throws {
+        let appIdentifier = "com.apple.dt.Xcode"
+        try await openApplication(bundleIdentifier: appIdentifier)
+        try await Task.sleep(for: .seconds(10)) // Give Xcode more time to launch
+        try await stateManager.updateUIStateTree(applicationIdentifier: appIdentifier)
+        
+        let stateTree = try await stateManager.getUIStateTree(applicationIdentifier: appIdentifier)
+        XCTAssertFalse(stateTree.treeData.isEmpty, "The Xcode UI tree should contain at least one window.")
     }
 }
