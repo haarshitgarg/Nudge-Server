@@ -24,7 +24,7 @@ let package = Package(
         .testTarget(
             name: "NudgeTests",
             dependencies: ["NudgeServer"],
-            path: "Tests/CLIToolTests"
+            path: "Tests/NudgeServerTests"
         )
     ]
 ) 
