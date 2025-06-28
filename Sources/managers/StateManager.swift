@@ -22,7 +22,7 @@ actor StateManager {
             throw NudgeError.accessibilityPermissionDenied
         }
 
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == applicationIdentifier }) else {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
             os_log("Application %@ not running. Cannot update UI tree.", log: log, type: .error, applicationIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
@@ -30,18 +30,35 @@ actor StateManager {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var uiElements: [UIElementInfo] = []
 
-        // Get the main window(s) of the application
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value)
+        // Try to get the focused window first
+        var focusedWindowValue: CFTypeRef?
+        let focusedWindowResult = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowValue)
 
-        if result == .success, let windows = value as? [AXUIElement] {
-            for window in windows {
-                // Recursively build UIElementInfo for each window up to depth 2
-                uiElements.append(await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 4))
-            }
+        if focusedWindowResult == .success {
+            let focusedWindow = focusedWindowValue as! AXUIElement
+            uiElements.append(await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 1))
         } else {
-            os_log("Could not get windows for application %@. Error: %d", log: log, type: .error, applicationIdentifier, result.rawValue)
-            throw NudgeError.invalidRequest(message: "\(applicationIdentifier) doesn't have a window. It might be a background application. Currently not supported")
+            // Fallback to getting all windows if no focused window is found
+            var allWindowsValue: CFTypeRef?
+            let allWindowsResult = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &allWindowsValue)
+
+            if allWindowsResult == .success {
+                let allWindows = allWindowsValue as! [AXUIElement]
+                for window in allWindows {
+                    uiElements.append(await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 1))
+                }
+            } else {
+                os_log("Could not get any windows for application %@. Error: %d", log: log, type: .error, applicationIdentifier, allWindowsResult.rawValue)
+                throw NudgeError.invalidRequest(message: "\(applicationIdentifier) doesn't have any accessible windows.")
+            }
+        }
+
+        var menuBarValue: CFTypeRef?
+        let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
+        if menuBarResult == .success {
+            let menuBar = menuBarValue as! AXUIElement
+            uiElements.append(await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 1))
+        } else {
         }
 
         let newTree = UIStateTree(applicationIdentifier: applicationIdentifier, treeData: uiElements, isStale: false, lastUpdated: Date())
