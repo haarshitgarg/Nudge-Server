@@ -49,6 +49,31 @@ struct NavServer: Service {
                     ]),
                     "required": .array(["bundle_identifier"])
                 ])
+            ),
+
+            Tool(
+                name: "click_the_ui_element", 
+                description: "This tool will click the UI element. It takes input as ui_element_id. Returns if the click was successful or an appropriate error message", 
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "bundle_identifier": .object(["type": "string", "description": "Bundle identifier of application. For example: com.apple.safari for Safari or com.apple.dt.Xcode for Xcode"]),
+                        "ui_element_id": .object(["type": "string", "description": "The id of the UI element to be clicked"])
+                    ]),
+                    "required": .array(["bundle_identifier", "ui_element_id"])
+                ])
+            ),
+
+            Tool(
+                name: "get_ui_elements", 
+                description: "This tool will get the UI elements of a window for an application. It takes input as the bundle_identifier, and returns an array of availale ui elements. Eg input: com.apple.safari, output: [{title: dummy_title, ui_element_id: dummy_id, ...}, {}, ...]", 
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "bundle_identifier": .object(["type": "string", "description": "Bundle identifier of application. For example: com.apple.safari for Safari or com.apple.dt.Xcode for Xcode"]),
+                    ]),
+                    "required": .array(["bundle_identifier"])
+                ])
             )
         ]
         await server.withMethodHandler(ListTools.self) { _ in
@@ -108,6 +133,10 @@ struct NavServer: Service {
                     logger.error("Returned with error: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
                 }
+            case "get_ui_elements":
+                return CallTool.Result(content: [.text("[{\"ui_element_id\": \"id_1\", \"element_description\":\"Log in button\"}, {\"ui_element_id\": \"id_2\", \"element_description\":\"Log in button\"}]")], isError: false)
+            case "click_the_ui_element":
+                return CallTool.Result(content: [.text("Successfull")], isError: false)
             default:
                 logger.warning("Unknown tool name: \(tool_name)")
                 return CallTool.Result(content: [.text("Unknown tool")], isError: true)
