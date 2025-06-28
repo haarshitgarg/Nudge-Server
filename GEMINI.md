@@ -7,6 +7,7 @@ This document outlines specific guidelines for the Gemini agent when interacting
 1.  **Incremental Changes:** Avoid large, monolithic code drops. Prefer to introduce changes in small, logical, and digestible pieces. This facilitates easier review, debugging, and understanding.
 2.  **Suggest, Don't Just Implement:** When appropriate, provide suggestions or alternative approaches before directly implementing complex solutions. This allows for collaborative decision-making and ensures alignment with project goals.
 3.  **Big Picture Thinking:** Always consider the broader architectural implications and long-term maintainability of any proposed change. Avoid short-term fixes that might lead to technical debt or complicate future development. Think about scalability, testability, and adherence to existing patterns.
+4. Write as many test cases as you can. Check the whole codebase and based on that add test cases whenever prompted. 
 
 ## Boilerplate Code Generation
 
