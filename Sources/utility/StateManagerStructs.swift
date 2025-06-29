@@ -9,7 +9,6 @@ struct UIStateTree: Codable, Sendable {
 }
 
 struct UIElementInfo: Codable, Sendable {
-    // AI MARKER: Make this struct a codable UI info tree that stores necessary information about an AXUIelement
     let role: String
     let subrole: String?
     let title: String?
