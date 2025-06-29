@@ -9,15 +9,20 @@ struct UIStateTree: Codable, Sendable {
 }
 
 struct UIElementInfo: Codable, Sendable {
-    let role: String
-    let subrole: String?
     let title: String?
-    let value: String?
-    let frame: CGRect?
-    let identifier: String?
     let help: String?
-    let isEnabled: Bool?
-    let isSelected: Bool?
-    let isFocused: Bool?
+    let value: String?
+    let identifier: String?
+    let frame: CGRect?
     let children: [UIElementInfo]
+    
+    /// Returns true if this element has meaningful content for LLM processing
+    var hasMeaningfulContent: Bool {
+        return (title != nil && !title!.isEmpty) || (help != nil && !help!.isEmpty)
+    }
+    
+    /// Filters children to only include elements with meaningful content
+    var meaningfulChildren: [UIElementInfo] {
+        return children.filter { $0.hasMeaningfulContent }
+    }
 }

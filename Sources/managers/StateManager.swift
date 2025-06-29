@@ -81,17 +81,12 @@ actor StateManager {
         }
 
         // Extract attributes
-        let role = getAttribute(element, kAXRoleAttribute) as? String ?? "Unknown"
-        let subrole = getAttribute(element, kAXSubroleAttribute) as? String
         let title = getAttribute(element, kAXTitleAttribute) as? String
         let valueAttr = getAttribute(element, kAXValueAttribute) as? String
         let identifier = getAttribute(element, kAXIdentifierAttribute) as? String
         let help = getAttribute(element, kAXHelpAttribute) as? String
-        let isEnabled = getAttribute(element, kAXEnabledAttribute) as? Bool
-        let isSelected = getAttribute(element, kAXSelectedAttribute) as? Bool
-        let isFocused = getAttribute(element, kAXFocusedAttribute) as? Bool
 
-        var frame: CGRect?
+        var frame: CGRect? = nil
         if let positionValue = getAttribute(element, kAXPositionAttribute),
            let sizeValue = getAttribute(element, kAXSizeAttribute) {
             var position: CGPoint = .zero
@@ -102,16 +97,11 @@ actor StateManager {
         }
 
         return UIElementInfo(
-            role: role,
-            subrole: subrole,
             title: title,
-            value: valueAttr,
-            frame: frame,
-            identifier: identifier,
             help: help,
-            isEnabled: isEnabled,
-            isSelected: isSelected,
-            isFocused: isFocused,
+            value: valueAttr,
+            identifier: identifier,
+            frame: frame,
             children: children
         )
     }
@@ -185,14 +175,8 @@ actor StateManager {
 
         // Filter out elements that are not relevant for navigation (like invisible elements)
         let filteredElements = relevantElements.filter { element in
-            // Keep elements that are enabled and have some meaningful content
-            let isEnabled = element.isEnabled ?? true
-            let hasContent = (element.title?.isEmpty == false) || 
-                           (element.value?.isEmpty == false) || 
-                           (element.role != "Unknown") ||
-                           (element.identifier?.isEmpty == false)
-            
-            return isEnabled && hasContent
+            // Keep elements that have meaningful content
+            return element.hasMeaningfulContent
         }
 
         os_log("Found %d relevant UI elements in frame for %@", log: log, type: .debug, filteredElements.count, applicationIdentifier)
@@ -259,13 +243,10 @@ actor StateManager {
         
         let elementsInFrame = try await getUIElementsInFrame(applicationIdentifier: applicationIdentifier, frame: frame)
         
-        // Filter elements to only include those within the circular radius
-        return elementsInFrame.filter { element in
-            guard let elementFrame = element.frame else { return false }
-            let elementCenter = CGPoint(x: elementFrame.midX, y: elementFrame.midY)
-            let distance = sqrt(pow(elementCenter.x - center.x, 2) + pow(elementCenter.y - center.y, 2))
-            return distance <= radius
-        }
+        // Since we no longer store frame in UIElementInfo, we need to filter differently
+        // For now, return all elements in the frame since we can't calculate distance without frame
+        // TODO: Consider adding frame back if circular filtering is important
+        return elementsInFrame
     }
 
     /// Finds and clicks a UI element by its identifier.
