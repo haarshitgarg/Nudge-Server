@@ -70,7 +70,7 @@ final class StateManagerTests: XCTestCase {
         
         // If we got elements, verify they have the expected structure
         for element in uiElements {
-            XCTAssertTrue(element.hasMeaningfulContent, "UI element should have meaningful content (title or help)")
+            XCTAssertTrue(element.isActionable, "UI element should be actionable for user interaction")
             XCTAssertNotNil(element.frame, "UI element should have a frame")
         }
     }
