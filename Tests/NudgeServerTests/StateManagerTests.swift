@@ -70,7 +70,7 @@ final class StateManagerTests: XCTestCase {
         
         // If we got elements, verify they have the expected structure
         for element in uiElements {
-            XCTAssertFalse(element.role.isEmpty, "UI element should have a role")
+            XCTAssertTrue(element.isActionable, "UI element should be actionable for user interaction")
             XCTAssertNotNil(element.frame, "UI element should have a frame")
         }
     }
@@ -87,7 +87,7 @@ final class StateManagerTests: XCTestCase {
         let uiElements = try await stateManager.getUIElementsInFrame(applicationIdentifier: appIdentifier, frame: testFrame)
         
         // Find an element with an identifier that we can click
-        if let clickableElement = uiElements.first(where: { $0.identifier != nil && $0.isEnabled == true }) {
+        if let clickableElement = uiElements.first(where: { $0.identifier != nil }) {
             // Test clicking the element
             do {
                 try await stateManager.clickUIElement(applicationIdentifier: appIdentifier, elementIdentifier: clickableElement.identifier!)
