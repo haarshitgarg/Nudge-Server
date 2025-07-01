@@ -21,9 +21,29 @@ func openApplication(bundleIdentifier: String) async throws {
     do {
         try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
     } catch {
-        throw NudgeError.applicationNotFound(bundleIdentifier: bundleIdentifier)
+        throw NudgeError.applicationLaunchFailed(bundleIdentifier: bundleIdentifier, underlyingError: error)
     }
-    try await StateManager.shared.updateUIStateTree(applicationIdentifier: bundleIdentifier)
+    
+    // Wait for the application to be registered as running before updating UI state tree
+    // This fixes the timing issue where the app is visually opening but not yet in runningApplications
+    var retryCount = 0
+    let maxRetries = 20 // Maximum 10 seconds wait (20 * 0.5 seconds)
+    
+    while retryCount < maxRetries {
+        // Check if the app is now running
+        if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) {
+            // App is now running, try to update the UI state tree
+            try await StateManager.shared.updateUIStateTree(applicationIdentifier: bundleIdentifier)
+            return
+        }
+        
+        // Wait a bit before retrying
+        try await Task.sleep(for: .milliseconds(500))
+        retryCount += 1
+    }
+    
+    // If we get here, the app didn't appear in running applications within the timeout
+    throw NudgeError.applicationLaunchFailed(bundleIdentifier: bundleIdentifier, underlyingError: nil)
 }
 
 // Example: Function to simulate a click at a specific screen coordinate

@@ -37,7 +37,7 @@ actor StateManager {
 
         if focusedWindowResult == .success {
             let focusedWindow = focusedWindowValue as! AXUIElement
-            uiElements.append(await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 3))
+            uiElements.append(contentsOf: await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 3))
         } else {
             // Fallback to getting all windows if no focused window is found
             var allWindowsValue: CFTypeRef?
@@ -46,7 +46,7 @@ actor StateManager {
             if allWindowsResult == .success {
                 let allWindows = allWindowsValue as! [AXUIElement]
                 for window in allWindows {
-                    uiElements.append(await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 3))
+                    uiElements.append(contentsOf: await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 3))
                 }
             } else {
                 os_log("Could not get any windows for application %@. Error: %d", log: log, type: .error, applicationIdentifier, allWindowsResult.rawValue)
@@ -58,41 +58,103 @@ actor StateManager {
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success {
             let menuBar = menuBarValue as! AXUIElement
-            uiElements.append(await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3))
+            uiElements.append(contentsOf: await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3))
         } else {
+            os_log("Could not get any menu bar. That is weird", log: log, type: .debug)
+            // TODO: To decide if this is strictly necessary. Do all apps require menu bar
+            throw NudgeError.invalidRequest(message: "\(applicationIdentifier) doesn't have any accessible menu bars.")
         }
 
-        // Apply hierarchy flattening to remove irrelevant container elements
-        var flattenedElements: [UIElementInfo] = []
-        for element in uiElements {
-            flattenedElements.append(contentsOf: flattenUIElementHierarchy(element))
-        }
-
-        let newTree = UIStateTree(applicationIdentifier: applicationIdentifier, treeData: flattenedElements, isStale: false, lastUpdated: Date())
+        let newTree = UIStateTree(applicationIdentifier: applicationIdentifier, treeData: uiElements, isStale: false, lastUpdated: Date())
         uiStateTrees[applicationIdentifier] = newTree
         os_log("Successfully updated UI state tree for %@", log: log, type: .debug, applicationIdentifier)
     }
 
-    /// Recursively builds UIElementInfo from an AXUIElement.
-    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int) async -> UIElementInfo {
-        var children: [UIElementInfo] = []
-        if currentDepth < maxDepth {
-            var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
-            if result == .success, let axChildren = value as? [AXUIElement] {
-                for child in axChildren {
-                    children.append(await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
-                }
-            }
-        }
-
-        // Extract attributes
+    /// Recursively builds UIElementInfo from an AXUIElement, flattening container elements during collection.
+    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int) async -> [UIElementInfo] {
+        // Extract attributes first to determine if this element should be flattened
         let title = getAttribute(element, kAXTitleAttribute) as? String
         let valueAttr = getAttribute(element, kAXValueAttribute) as? String
         let identifier = getAttribute(element, kAXIdentifierAttribute) as? String
         let help = getAttribute(element, kAXHelpAttribute) as? String
         let role = getAttribute(element, kAXRoleAttribute) as? String
         let isEnabled = getAttribute(element, kAXEnabledAttribute) as? Bool
+        
+        // Additional accessibility attributes that might contain useful information
+        let description = getAttribute(element, kAXDescriptionAttribute) as? String
+        let roleDescription = getAttribute(element, kAXRoleDescriptionAttribute) as? String
+        let placeholderValue = getAttribute(element, kAXPlaceholderValueAttribute) as? String
+
+        // Define roles that should be completely ignored (not actionable/useful for LLM)
+        let rolesToIgnore = [
+            "AXStaticText",      // Static text - usually just labels/info, not actionable
+            "AXImage",           // Decorative images - usually not clickable/actionable
+            "AXUnknown",         // Unknown elements - not useful
+            "AXGenericElement"   // Generic elements - usually not actionable
+        ]
+        
+        // Check if this element should be completely ignored
+        if let elementRole = role, rolesToIgnore.contains(elementRole) {
+            // Skip this element entirely - return empty array
+            return []
+        }
+        
+        // Define container roles that should be flattened during collection
+        let containerRolesToFlatten = [
+            "AXGroup",           // Generic grouping container - flatten these
+            "AXSplitGroup",      // Split view containers - flatten these  
+            "AXScrollArea",      // Scroll areas - flatten to show content
+            "AXLayoutArea",      // Layout containers - flatten these
+            "AXLayoutItem",      // Layout items - flatten these
+            "AXSplitter",        // UI splitters - flatten these
+            "AXToolbar",         // Toolbar containers - flatten these
+            "AXTabGroup"         // Tab group containers - flatten these
+        ]
+        
+        // Check if this element should be flattened
+        if let elementRole = role, containerRolesToFlatten.contains(elementRole) {
+            // For container elements, only preserve them if they have USER-MEANINGFUL content
+            // Be very strict - only title and help are considered user-meaningful for containers
+            // Technical identifiers, descriptions, and role descriptions don't count for containers
+            let hasUserMeaningfulContent = (title != nil && !title!.isEmpty) || 
+                                         (help != nil && !help!.isEmpty)
+            
+            // For container elements, flatten if:
+            // 1. They have no user-meaningful content (identifiers don't count), OR
+            // 2. They are disabled (like AXSplitter with isEnabled=false)
+            let shouldFlatten = !hasUserMeaningfulContent || (isEnabled == false)
+            
+            if shouldFlatten && currentDepth < maxDepth {
+                // Flatten: collect children directly instead of creating this container
+                // Don't increment depth since we're not adding a meaningful hierarchy layer
+                var flattenedChildren: [UIElementInfo] = []
+                
+                var value: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+                if result == .success, let axChildren = value as? [AXUIElement] {
+                    for child in axChildren {
+                        flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth))
+                    }
+                }
+                
+                return flattenedChildren
+            } else if shouldFlatten {
+                // Empty container with no content and no children - skip it entirely
+                return []
+            }
+        }
+
+        // For non-container elements or containers with meaningful content, build normally
+        var children: [UIElementInfo] = []
+        if currentDepth < maxDepth {
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+            if result == .success, let axChildren = value as? [AXUIElement] {
+                for child in axChildren {
+                    children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                }
+            }
+        }
 
         var frame: CGRect? = nil
         if let positionValue = getAttribute(element, kAXPositionAttribute),
@@ -104,7 +166,17 @@ actor StateManager {
             }
         }
 
-        return UIElementInfo(
+        // Debug logging to help understand what attributes are being captured
+        if role == "AXButton" && (title != nil || description != nil || roleDescription != nil) {
+            os_log("Button found - title: %@, description: %@, roleDescription: %@, identifier: %@", 
+                   log: log, type: .debug, 
+                   title ?? "nil", 
+                   description ?? "nil", 
+                   roleDescription ?? "nil", 
+                   identifier ?? "nil")
+        }
+        
+        let elementInfo = UIElementInfo(
             title: title,
             help: help,
             value: valueAttr,
@@ -112,73 +184,16 @@ actor StateManager {
             frame: frame,
             children: children,
             role: role,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            description: description,
+            roleDescription: roleDescription,
+            placeholderValue: placeholderValue
         )
+        
+        return [elementInfo]
     }
 
-    /// Flattens the UI element hierarchy by replacing irrelevant container elements with their children.
-    /// This helps remove intermediate container layers like AXGroup, AXSplitGroup that don't provide actionable value.
-    private func flattenUIElementHierarchy(_ element: UIElementInfo) -> [UIElementInfo] {
-        // Define container roles that should be flattened (replaced with their children)
-        let containerRolesToFlatten = [
-            "AXGroup",           // Generic grouping container - flatten these
-            "AXSplitGroup",      // Split view containers - flatten these  
-            "AXScrollArea",      // Scroll areas - flatten to show content
-            "AXLayoutArea",      // Layout containers - flatten these
-            "AXLayoutItem",      // Layout items - flatten these
-            "AXGenericElement",  // Generic elements - flatten these
-            "AXSplitter",        // UI splitters - flatten these
-            "AXToolbar",         // Toolbar containers - flatten these
-            "AXTabGroup"         // Tab group containers - flatten these
-        ]
-        
-        // Check if element has meaningful content
-        let hasContent = (element.title != nil && !element.title!.isEmpty) || 
-                        (element.help != nil && !element.help!.isEmpty) || 
-                        (element.value != nil && !element.value!.isEmpty) ||
-                        (element.identifier != nil && !element.identifier!.isEmpty)
-        
-        // Check if this element should be flattened
-        if let role = element.role, containerRolesToFlatten.contains(role) {
-            // For container elements, flatten if:
-            // 1. They have no meaningful content, OR
-            // 2. They are disabled (like AXSplitter with isEnabled=false)
-            let shouldFlatten = !hasContent || (element.isEnabled == false)
-            
-            if shouldFlatten && !element.children.isEmpty {
-                // Flatten: return the flattened children instead of this container
-                var flattenedChildren: [UIElementInfo] = []
-                for child in element.children {
-                    flattenedChildren.append(contentsOf: flattenUIElementHierarchy(child))
-                }
-                return flattenedChildren
-            } else if shouldFlatten && element.children.isEmpty {
-                // Empty container with no content - remove it entirely
-                return []
-            }
-        }
-        
-        // For non-container elements or containers with meaningful content,
-        // keep the element but flatten its children
-        var flattenedChildren: [UIElementInfo] = []
-        for child in element.children {
-            flattenedChildren.append(contentsOf: flattenUIElementHierarchy(child))
-        }
-        
-        // Return the element with flattened children
-        let flattenedElement = UIElementInfo(
-            title: element.title,
-            help: element.help,
-            value: element.value,
-            identifier: element.identifier,
-            frame: element.frame,
-            children: flattenedChildren,
-            role: element.role,
-            isEnabled: element.isEnabled
-        )
-        
-        return [flattenedElement]
-    }
+
 
     /// Helper to safely get an attribute from an AXUIElement.
     private func getAttribute(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
@@ -247,14 +262,8 @@ actor StateManager {
             }
         }
 
-        // Apply hierarchy flattening to remove irrelevant container elements
-        var flattenedElements: [UIElementInfo] = []
-        for element in relevantElements {
-            flattenedElements.append(contentsOf: flattenUIElementHierarchy(element))
-        }
-
         // Filter to only include truly actionable elements for LLM decision-making
-        let filteredElements = flattenedElements.filter { element in
+        let filteredElements = relevantElements.filter { element in
             // Keep only elements that users can directly interact with
             return element.isActionable
         }
@@ -281,8 +290,8 @@ actor StateManager {
         // Check if this element intersects with the target frame
         if let frame = elementFrame, frame.intersects(targetFrame) {
             // Build the UI element info for this element
-            let elementInfo = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0) // Don't recurse here, we'll handle children separately
-            collectedElements.append(elementInfo)
+            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0) // Don't recurse here, we'll handle children separately
+            collectedElements.append(contentsOf: elementInfos)
         }
 
         // Recursively check children if we haven't reached max depth
