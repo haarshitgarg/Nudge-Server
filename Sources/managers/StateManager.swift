@@ -85,6 +85,20 @@ actor StateManager {
         let roleDescription = getAttribute(element, kAXRoleDescriptionAttribute) as? String
         let placeholderValue = getAttribute(element, kAXPlaceholderValueAttribute) as? String
 
+        // Define roles that should be completely ignored (not actionable/useful for LLM)
+        let rolesToIgnore = [
+            "AXStaticText",      // Static text - usually just labels/info, not actionable
+            "AXImage",           // Decorative images - usually not clickable/actionable
+            "AXUnknown",         // Unknown elements - not useful
+            "AXGenericElement"   // Generic elements - usually not actionable
+        ]
+        
+        // Check if this element should be completely ignored
+        if let elementRole = role, rolesToIgnore.contains(elementRole) {
+            // Skip this element entirely - return empty array
+            return []
+        }
+        
         // Define container roles that should be flattened during collection
         let containerRolesToFlatten = [
             "AXGroup",           // Generic grouping container - flatten these
@@ -92,7 +106,6 @@ actor StateManager {
             "AXScrollArea",      // Scroll areas - flatten to show content
             "AXLayoutArea",      // Layout containers - flatten these
             "AXLayoutItem",      // Layout items - flatten these
-            "AXGenericElement",  // Generic elements - flatten these
             "AXSplitter",        // UI splitters - flatten these
             "AXToolbar",         // Toolbar containers - flatten these
             "AXTabGroup"         // Tab group containers - flatten these
