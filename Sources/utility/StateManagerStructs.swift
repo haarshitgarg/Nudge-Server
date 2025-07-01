@@ -17,10 +17,17 @@ struct UIElementInfo: Codable, Sendable {
     let children: [UIElementInfo]
     let role: String? // AXRole of the element
     let isEnabled: Bool? // Whether the element is enabled/interactive
+    let description: String? // AXDescription attribute
+    let roleDescription: String? // AXRoleDescription attribute  
+    let placeholderValue: String? // AXPlaceholderValue attribute
     
     /// Returns true if this element has meaningful content for LLM processing
     var hasMeaningfulContent: Bool {
-        return (title != nil && !title!.isEmpty) || (help != nil && !help!.isEmpty)
+        return (title != nil && !title!.isEmpty) || 
+               (help != nil && !help!.isEmpty) ||
+               (description != nil && !description!.isEmpty) ||
+               (roleDescription != nil && !roleDescription!.isEmpty) ||
+               (placeholderValue != nil && !placeholderValue!.isEmpty)
     }
     
     /// Returns true if this element is relevant for LLM decision-making and automation
@@ -145,10 +152,13 @@ struct UIElementInfo: Codable, Sendable {
         }
         
         // For actionable elements, they should have some form of identification
-        // (title, help, value, or meaningful identifier)
+        // (title, help, value, description, roleDescription, placeholderValue, or meaningful identifier)
         let hasIdentification = (title != nil && !title!.isEmpty) || 
                                (help != nil && !help!.isEmpty) || 
                                (value != nil && !value!.isEmpty) ||
+                               (description != nil && !description!.isEmpty) ||
+                               (roleDescription != nil && !roleDescription!.isEmpty) ||
+                               (placeholderValue != nil && !placeholderValue!.isEmpty) ||
                                (identifier != nil && !identifier!.isEmpty && !identifier!.hasPrefix("_NS:"))
         
         return hasIdentification

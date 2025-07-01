@@ -79,6 +79,11 @@ actor StateManager {
         let help = getAttribute(element, kAXHelpAttribute) as? String
         let role = getAttribute(element, kAXRoleAttribute) as? String
         let isEnabled = getAttribute(element, kAXEnabledAttribute) as? Bool
+        
+        // Additional accessibility attributes that might contain useful information
+        let description = getAttribute(element, kAXDescriptionAttribute) as? String
+        let roleDescription = getAttribute(element, kAXRoleDescriptionAttribute) as? String
+        let placeholderValue = getAttribute(element, kAXPlaceholderValueAttribute) as? String
 
         // Define container roles that should be flattened during collection
         let containerRolesToFlatten = [
@@ -96,10 +101,10 @@ actor StateManager {
         // Check if this element should be flattened
         if let elementRole = role, containerRolesToFlatten.contains(elementRole) {
             // For container elements, only preserve them if they have USER-MEANINGFUL content
-            // Technical identifiers don't count as meaningful content
+            // Be very strict - only title and help are considered user-meaningful for containers
+            // Technical identifiers, descriptions, and role descriptions don't count for containers
             let hasUserMeaningfulContent = (title != nil && !title!.isEmpty) || 
-                                         (help != nil && !help!.isEmpty) || 
-                                         (valueAttr != nil && !valueAttr!.isEmpty)
+                                         (help != nil && !help!.isEmpty)
             
             // For container elements, flatten if:
             // 1. They have no user-meaningful content (identifiers don't count), OR
@@ -148,6 +153,16 @@ actor StateManager {
             }
         }
 
+        // Debug logging to help understand what attributes are being captured
+        if role == "AXButton" && (title != nil || description != nil || roleDescription != nil) {
+            os_log("Button found - title: %@, description: %@, roleDescription: %@, identifier: %@", 
+                   log: log, type: .debug, 
+                   title ?? "nil", 
+                   description ?? "nil", 
+                   roleDescription ?? "nil", 
+                   identifier ?? "nil")
+        }
+        
         let elementInfo = UIElementInfo(
             title: title,
             help: help,
@@ -156,7 +171,10 @@ actor StateManager {
             frame: frame,
             children: children,
             role: role,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            description: description,
+            roleDescription: roleDescription,
+            placeholderValue: placeholderValue
         )
         
         return [elementInfo]
