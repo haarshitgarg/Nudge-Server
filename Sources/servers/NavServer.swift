@@ -20,11 +20,6 @@ fileprivate struct GetUIElementsInFrame: Decodable {
     let height: Double
 }
 
-fileprivate struct ClickUIElement: Decodable {
-    let bundle_identifier: String
-    let ui_element_id: String
-}
-
 fileprivate struct ClickAtCoordinate: Decodable {
     let bundle_identifier: String
     let x: Double
@@ -70,31 +65,6 @@ struct NavServer: Service {
                         "required": .array(["bundle_identifier"])
                     ])
                 ),
-
-                Tool(
-                    name: "click_the_ui_element", 
-                    description: "This tool will click the UI element. It takes input as ui_element_id. Returns if the click was successful or an appropriate error message", 
-                    inputSchema: .object([
-                        "type": "object",
-                        "properties": .object([
-                            "bundle_identifier": .object(["type": "string", "description": "Bundle identifier of application. For example: com.apple.safari for Safari or com.apple.dt.Xcode for Xcode"]),
-                            "ui_element_id": .object(["type": "string", "description": "The id of the UI element to be clicked"])
-                        ]),
-                        "required": .array(["bundle_identifier", "ui_element_id"])
-                    ])
-                ),
-
-                // Tool(
-                //     name: "get_ui_elements", 
-                //     description: "This tool will get the UI elements of a window for an application. It takes input as the bundle_identifier, and returns an array of availale ui elements. Eg input: com.apple.safari, output: [{title: dummy_title, ui_element_id: dummy_id, ...}, {}, ...]", 
-                //     inputSchema: .object([
-                //         "type": "object",
-                //         "properties": .object([
-                //             "bundle_identifier": .object(["type": "string", "description": "Bundle identifier of application. For example: com.apple.safari for Safari or com.apple.dt.Xcode for Xcode"]),
-                //         ]),
-                //         "required": .array(["bundle_identifier"])
-                //     ])
-                // ),
 
                 Tool(
                     name: "get_ui_elements_in_frame", 
@@ -183,8 +153,6 @@ struct NavServer: Service {
                     logger.error("Returned with error: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
                 }
-            case "get_ui_elements":
-                return CallTool.Result(content: [.text("[{\"ui_element_id\": \"id_1\", \"element_description\":\"Log in button\"}, {\"ui_element_id\": \"id_2\", \"element_description\":\"Log in button\"}]")], isError: false)
             case "get_ui_elements_in_frame":
                 logger.info("Attempting to get UI elements in frame")
                 guard let arguments = params.arguments else {
@@ -207,29 +175,6 @@ struct NavServer: Service {
                     }
                     logger.info("Got \(uiElements.count) UI elements in frame for \(bundleIdentifier)")
                     return CallTool.Result(content: [.text(elementsString)], isError: false)
-                } catch {
-                    logger.error("Returned with error: \(error.localizedDescription)")
-                    return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
-                }
-            case "click_the_ui_element":
-                logger.info("Attempting to click UI element")
-                guard let arguments = params.arguments else {
-                    logger.error("Missing arguments for click_the_ui_element.")
-                    return CallTool.Result(content: [.text("Missing arguments")], isError: true)
-                }
-
-                do {
-                    let data = try JSONEncoder().encode(arguments)
-                    let clickArgs = try JSONDecoder().decode(ClickUIElement.self, from: data)
-                    let bundleIdentifier = clickArgs.bundle_identifier
-                    let elementId = clickArgs.ui_element_id
-                    
-                    logger.info("Attempting to click element with ID '\(elementId)' in application '\(bundleIdentifier)'")
-
-                    try await StateManager.shared.clickUIElement(applicationIdentifier: bundleIdentifier, elementIdentifier: elementId)
-                    
-                    logger.info("Successfully clicked UI element with ID '\(elementId)'")
-                    return CallTool.Result(content: [.text("Successfully clicked UI element with ID '\(elementId)'")], isError: false)
                 } catch {
                     logger.error("Returned with error: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
@@ -269,7 +214,7 @@ struct NavServer: Service {
         print("Starting the server...")
         try await server.start(transport:self.transport)
         try await Task.sleep(for: .seconds(60*60*24*365))
-        print("Stoppint the serveer after timeout")
+        print("Stopping the server after timeout")
     }
 
 }

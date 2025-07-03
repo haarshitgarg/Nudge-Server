@@ -216,9 +216,6 @@ actor StateManager {
         return stateTree
     }
 
-
-    // AI MARKER: WORK ON GET UI ELEMENT
-
     /// Gets UI elements within a specified frame in the frontmost window of an application.
     /// This function is designed to help agents navigate by providing relevant UI items in a specific area.
     func getUIElementsInFrame(applicationIdentifier: String, frame: CGRect) async throws -> [UIElementInfo] {
@@ -309,73 +306,6 @@ actor StateManager {
         return collectedElements
     }
 
-    /// Gets UI elements in a rectangular area defined by top-left and bottom-right coordinates.
-    /// This is a convenience function that creates a CGRect from coordinates.
-    func getUIElementsInArea(applicationIdentifier: String, topLeft: CGPoint, bottomRight: CGPoint) async throws -> [UIElementInfo] {
-        let frame = CGRect(
-            x: min(topLeft.x, bottomRight.x),
-            y: min(topLeft.y, bottomRight.y),
-            width: abs(bottomRight.x - topLeft.x),
-            height: abs(bottomRight.y - topLeft.y)
-        )
-        return try await getUIElementsInFrame(applicationIdentifier: applicationIdentifier, frame: frame)
-    }
-
-    /// Gets UI elements within a circular area around a center point.
-    func getUIElementsInRadius(applicationIdentifier: String, center: CGPoint, radius: CGFloat) async throws -> [UIElementInfo] {
-        let frame = CGRect(
-            x: center.x - radius,
-            y: center.y - radius,
-            width: radius * 2,
-            height: radius * 2
-        )
-        
-        let elementsInFrame = try await getUIElementsInFrame(applicationIdentifier: applicationIdentifier, frame: frame)
-        
-        // Since we no longer store frame in UIElementInfo, we need to filter differently
-        // For now, return all elements in the frame since we can't calculate distance without frame
-        // TODO: Consider adding frame back if circular filtering is important
-        return elementsInFrame
-    }
-
-    /// Finds and clicks a UI element by its identifier.
-    func clickUIElement(applicationIdentifier: String, elementIdentifier: String) async throws {
-        os_log("Attempting to click UI element with identifier %@ in application %@", log: log, type: .debug, elementIdentifier, applicationIdentifier)
-
-        guard AXIsProcessTrusted() else {
-            os_log("Accessibility permissions denied. Cannot click UI element for %@", log: log, type: .error, applicationIdentifier)
-            throw NudgeError.accessibilityPermissionDenied
-        }
-
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
-            os_log("Application %@ not running. Cannot click UI element.", log: log, type: .error, applicationIdentifier)
-            throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
-        }
-
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        
-        // Search for the element in the application
-        guard let targetElement = await findElementByIdentifier(in: axApp, identifier: elementIdentifier) else {
-            os_log("UI element with identifier %@ not found in application %@", log: log, type: .error, elementIdentifier, applicationIdentifier)
-            throw NudgeError.elementNotFound(description: "Element with identifier '\(elementIdentifier)' not found")
-        }
-
-        // Check if the element is enabled
-        if let isEnabled = getAttribute(targetElement, kAXEnabledAttribute) as? Bool, !isEnabled {
-            os_log("UI element with identifier %@ is not enabled", log: log, type: .error, elementIdentifier)
-            throw NudgeError.elementNotInteractable(description: "Element with identifier '\(elementIdentifier)' is not enabled")
-        }
-
-        // Perform the click action
-        let clickResult = AXUIElementPerformAction(targetElement, kAXPressAction as CFString)
-        if clickResult != .success {
-            os_log("Failed to click UI element with identifier %@. Error: %d", log: log, type: .error, elementIdentifier, clickResult.rawValue)
-            throw NudgeError.clickFailed(description: "Failed to click element '\(elementIdentifier)'", underlyingError: nil)
-        }
-
-        os_log("Successfully clicked UI element with identifier %@", log: log, type: .debug, elementIdentifier)
-    }
-
     /// Clicks at a specific coordinate within an application window.
     func clickAtCoordinate(applicationIdentifier: String, coordinate: CGPoint) async throws {
         os_log("Attempting to click at coordinate (%.1f, %.1f) in application %@", log: log, type: .debug, coordinate.x, coordinate.y, applicationIdentifier)
@@ -390,9 +320,11 @@ actor StateManager {
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
+        let clickCoordinate: CGPoint = CGPoint(x: coordinate.x + 10, y: coordinate.y + 10)
+
         // Use Core Graphics to perform the click at the specified coordinate
-        let clickEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: coordinate, mouseButton: .left)
-        let releaseEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: coordinate, mouseButton: .left)
+        let clickEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickCoordinate, mouseButton: .left)
+        let releaseEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: clickCoordinate, mouseButton: .left)
         
         clickEvent?.post(tap: .cghidEventTap)
         releaseEvent?.post(tap: .cghidEventTap)
