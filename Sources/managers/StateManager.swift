@@ -320,9 +320,11 @@ actor StateManager {
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
+        let clickCoordinate: CGPoint = CGPoint(x: coordinate.x + 10, y: coordinate.y + 10)
+
         // Use Core Graphics to perform the click at the specified coordinate
-        let clickEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: coordinate, mouseButton: .left)
-        let releaseEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: coordinate, mouseButton: .left)
+        let clickEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickCoordinate, mouseButton: .left)
+        let releaseEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: clickCoordinate, mouseButton: .left)
         
         clickEvent?.post(tap: .cghidEventTap)
         releaseEvent?.post(tap: .cghidEventTap)
