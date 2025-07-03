@@ -38,6 +38,6 @@ struct TestServer: Service {
         print("Starting the server...")
         try await server.start(transport:self.transport)
         try await Task.sleep(for: .seconds(60*60*24*365))
-        print("Stoppint the serveer after timeout")
+        print("Stopping the server after timeout")
     }
 }

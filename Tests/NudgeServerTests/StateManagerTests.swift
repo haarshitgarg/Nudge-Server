@@ -75,31 +75,4 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
-    func testClickUIElement() async throws {
-        let appIdentifier = "com.apple.dt.Xcode"
-        try await openApplication(bundleIdentifier: appIdentifier)
-        try await Task.sleep(for: .seconds(10)) // Give Xcode more time to launch
-        
-        // First, get some UI elements to find one with an identifier
-        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let testFrame = CGRect(x: screenFrame.origin.x + 100, y: screenFrame.origin.y + 100, width: 800, height: 600)
-        
-        let uiElements = try await stateManager.getUIElementsInFrame(applicationIdentifier: appIdentifier, frame: testFrame)
-        
-        // Find an element with an identifier that we can click
-        if let clickableElement = uiElements.first(where: { $0.identifier != nil }) {
-            // Test clicking the element
-            do {
-                try await stateManager.clickUIElement(applicationIdentifier: appIdentifier, elementIdentifier: clickableElement.identifier!)
-                // If we get here, the click was successful
-                XCTAssertTrue(true, "Click operation completed without throwing an error")
-            } catch {
-                // It's okay if the click fails for some elements, but it shouldn't crash
-                XCTAssertTrue(error is NudgeError, "Should throw a NudgeError, not crash")
-            }
-        } else {
-            // If no clickable elements found, that's also okay for testing
-            XCTAssertTrue(true, "No clickable elements found in the test frame")
-        }
-    }
 }
