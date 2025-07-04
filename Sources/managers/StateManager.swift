@@ -37,7 +37,7 @@ actor StateManager {
 
         if focusedWindowResult == .success {
             let focusedWindow = focusedWindowValue as! AXUIElement
-            uiElements.append(contentsOf: await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 3))
+            uiElements.append(contentsOf: await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 2))
         } else {
             // Fallback to getting all windows if no focused window is found
             var allWindowsValue: CFTypeRef?
@@ -46,7 +46,7 @@ actor StateManager {
             if allWindowsResult == .success {
                 let allWindows = allWindowsValue as! [AXUIElement]
                 for window in allWindows {
-                    uiElements.append(contentsOf: await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 3))
+                    uiElements.append(contentsOf: await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 2))
                 }
             } else {
                 os_log("Could not get any windows for application %@. Error: %d", log: log, type: .error, applicationIdentifier, allWindowsResult.rawValue)
@@ -75,14 +75,11 @@ actor StateManager {
         // Extract attributes first to determine if this element should be flattened
         let title = getAttribute(element, kAXTitleAttribute) as? String
         let valueAttr = getAttribute(element, kAXValueAttribute) as? String
-        let identifier = getAttribute(element, kAXIdentifierAttribute) as? String
         let help = getAttribute(element, kAXHelpAttribute) as? String
         let role = getAttribute(element, kAXRoleAttribute) as? String
-        let isEnabled = getAttribute(element, kAXEnabledAttribute) as? Bool
         
         // Additional accessibility attributes that might contain useful information
         let description = getAttribute(element, kAXDescriptionAttribute) as? String
-        let roleDescription = getAttribute(element, kAXRoleDescriptionAttribute) as? String
         let placeholderValue = getAttribute(element, kAXPlaceholderValueAttribute) as? String
 
         // Define roles that should be completely ignored (not actionable/useful for LLM)
@@ -93,42 +90,110 @@ actor StateManager {
             "AXGenericElement"   // Generic elements - usually not actionable
         ]
         
+        // Define roles that provide context but should be merged with parent (not standalone)
+        let rolesToMergeWithParent = [
+            "AXHeading",         // Headings provide context but aren't actionable
+            "AXText",            // Text elements that provide context
+            "AXLabel"            // Labels that provide context
+        ]
+        
         // Check if this element should be completely ignored
         if let elementRole = role, rolesToIgnore.contains(elementRole) {
             // Skip this element entirely - return empty array
             return []
         }
         
-        // Define container roles that should be flattened during collection
+        // Check if this element should be merged with parent (extract info but don't create element)
+        if let elementRole = role, rolesToMergeWithParent.contains(elementRole) {
+            // Extract the text content from this element and return it as context
+            var contextInfo: [String] = []
+            
+            if let title = title, !title.isEmpty {
+                contextInfo.append("Context: \(title)")
+            }
+            
+            if let valueAttr = valueAttr, !valueAttr.isEmpty {
+                contextInfo.append("Context: \(valueAttr)")
+            }
+            
+            if let help = help, !help.isEmpty {
+                contextInfo.append("Context: \(help)")
+            }
+            
+            if let description = description, !description.isEmpty {
+                contextInfo.append("Context: \(description)")
+            }
+            
+            // Instead of creating a UIElementInfo, we'll return the children with context info
+            // But we need a way to pass this context up - for now, let's create a special "context" element
+            if !contextInfo.isEmpty {
+                let contextDescription = contextInfo.joined(separator: " | ")
+                
+                // Get children and add context to them
+                var childrenWithContext: [UIElementInfo] = []
+                if currentDepth < maxDepth {
+                    var value: CFTypeRef?
+                    let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+                    if result == .success, let axChildren = value as? [AXUIElement] {
+                        for child in axChildren {
+                            childrenWithContext.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                        }
+                    }
+                }
+                
+                // If we have children, add context to the first actionable child
+                if !childrenWithContext.isEmpty {
+                    for i in 0..<childrenWithContext.count {
+                        if childrenWithContext[i].isActionable {
+                            // Add context to this child's description
+                            let existingDesc = childrenWithContext[i].description ?? ""
+                            let newDesc = existingDesc.isEmpty ? contextDescription : "\(contextDescription) | \(existingDesc)"
+                            let updatedChild = UIElementInfo(
+                                frame: childrenWithContext[i].frame,
+                                description: newDesc,
+                                children: childrenWithContext[i].children
+                            )
+                            childrenWithContext[i] = updatedChild
+                            break
+                        }
+                    }
+                }
+                
+                return childrenWithContext
+            } else {
+                // No useful context, just return children
+                var children: [UIElementInfo] = []
+                if currentDepth < maxDepth {
+                    var value: CFTypeRef?
+                    let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+                    if result == .success, let axChildren = value as? [AXUIElement] {
+                        for child in axChildren {
+                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                        }
+                    }
+                }
+                return children
+            }
+        }
+        
+        // Define container roles that should ALWAYS be flattened (never appear in final tree)
         let containerRolesToFlatten = [
-            "AXGroup",           // Generic grouping container - flatten these
-            "AXSplitGroup",      // Split view containers - flatten these  
-            "AXScrollArea",      // Scroll areas - flatten to show content
-            "AXLayoutArea",      // Layout containers - flatten these
-            "AXLayoutItem",      // Layout items - flatten these
-            "AXSplitter",        // UI splitters - flatten these
-            "AXToolbar",         // Toolbar containers - flatten these
-            "AXTabGroup"         // Tab group containers - flatten these
+            "AXGroup",           // Generic grouping container - ALWAYS flatten
+            "AXSplitGroup",      // Split view containers - ALWAYS flatten  
+            "AXScrollArea",      // Scroll areas - ALWAYS flatten to show content
+            "AXLayoutArea",      // Layout containers - ALWAYS flatten
+            "AXLayoutItem",      // Layout items - ALWAYS flatten
+            "AXSplitter",        // UI splitters - ALWAYS flatten
+            "AXToolbar",         // Toolbar containers - ALWAYS flatten
+            "AXTabGroup"         // Tab group containers - ALWAYS flatten
         ]
         
-        // Check if this element should be flattened
+        // Check if this element should be flattened - if yes, ALWAYS flatten regardless of content
         if let elementRole = role, containerRolesToFlatten.contains(elementRole) {
-            // For container elements, only preserve them if they have USER-MEANINGFUL content
-            // Be very strict - only title and help are considered user-meaningful for containers
-            // Technical identifiers, descriptions, and role descriptions don't count for containers
-            let hasUserMeaningfulContent = (title != nil && !title!.isEmpty) || 
-                                         (help != nil && !help!.isEmpty)
+            // ALWAYS flatten container elements - collect children instead of the container itself
+            var flattenedChildren: [UIElementInfo] = []
             
-            // For container elements, flatten if:
-            // 1. They have no user-meaningful content (identifiers don't count), OR
-            // 2. They are disabled (like AXSplitter with isEnabled=false)
-            let shouldFlatten = !hasUserMeaningfulContent || (isEnabled == false)
-            
-            if shouldFlatten && currentDepth < maxDepth {
-                // Flatten: collect children directly instead of creating this container
-                // Don't increment depth since we're not adding a meaningful hierarchy layer
-                var flattenedChildren: [UIElementInfo] = []
-                
+            if currentDepth < maxDepth {
                 var value: CFTypeRef?
                 let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                 if result == .success, let axChildren = value as? [AXUIElement] {
@@ -136,13 +201,39 @@ actor StateManager {
                         flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth))
                     }
                 }
-                
-                return flattenedChildren
-            } else if shouldFlatten {
-                // Empty container with no content and no children - skip it entirely
-                return []
             }
+            
+            return flattenedChildren
         }
+
+        // Create combined description from all available text attributes
+        var descriptionParts: [String] = []
+        
+        if let role = role {
+            descriptionParts.append("Role: \(role)")
+        }
+        
+        if let title = title, !title.isEmpty {
+            descriptionParts.append("Title: \(title)")
+        }
+        
+        if let valueAttr = valueAttr, !valueAttr.isEmpty {
+            descriptionParts.append("Value: \(valueAttr)")
+        }
+        
+        if let help = help, !help.isEmpty {
+            descriptionParts.append("Help: \(help)")
+        }
+        
+        if let description = description, !description.isEmpty {
+            descriptionParts.append("Description: \(description)")
+        }
+        
+        if let placeholderValue = placeholderValue, !placeholderValue.isEmpty {
+            descriptionParts.append("Placeholder: \(placeholderValue)")
+        }
+        
+        let combinedDescription = descriptionParts.isEmpty ? nil : descriptionParts.joined(separator: " | ")
 
         // For non-container elements or containers with meaningful content, build normally
         var children: [UIElementInfo] = []
@@ -167,27 +258,16 @@ actor StateManager {
         }
 
         // Debug logging to help understand what attributes are being captured
-        if role == "AXButton" && (title != nil || description != nil || roleDescription != nil) {
-            os_log("Button found - title: %@, description: %@, roleDescription: %@, identifier: %@", 
+        if role == "AXButton" && combinedDescription != nil {
+            os_log("Button found - combined description: %@", 
                    log: log, type: .debug, 
-                   title ?? "nil", 
-                   description ?? "nil", 
-                   roleDescription ?? "nil", 
-                   identifier ?? "nil")
+                   combinedDescription!)
         }
         
         let elementInfo = UIElementInfo(
-            title: title,
-            help: help,
-            value: valueAttr,
-            identifier: identifier,
             frame: frame,
-            children: children,
-            role: role,
-            isEnabled: isEnabled,
-            description: description,
-            roleDescription: roleDescription,
-            placeholderValue: placeholderValue
+            description: combinedDescription,
+            children: children
         )
         
         return [elementInfo]
@@ -320,7 +400,7 @@ actor StateManager {
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
-        let clickCoordinate: CGPoint = CGPoint(x: coordinate.x + 10, y: coordinate.y + 10)
+        let clickCoordinate: CGPoint = CGPoint(x: coordinate.x, y: coordinate.y)
 
         // Use Core Graphics to perform the click at the specified coordinate
         let clickEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickCoordinate, mouseButton: .left)

@@ -84,7 +84,7 @@ struct NavServer: Service {
 
                 Tool(
                     name: "click_at_coordinate", 
-                    description: "This tool clicks at a specific coordinate within an application window. Useful when you know the exact position but not the element identifier.", 
+                    description: "This tool clicks at a specific coordinate within an application window. Useful when you know the exact position of the element you want to click on. Make sure you give location such that it is not at the borders of the element. For example if the frame has x=100, y=100, width=100, height=100, then you should give x=150, y=150. This is because the click will be at the center of the element.", 
                     inputSchema: .object([
                         "type": "object",
                         "properties": .object([
@@ -197,7 +197,7 @@ struct NavServer: Service {
                     try await StateManager.shared.clickAtCoordinate(applicationIdentifier: bundleIdentifier, coordinate: coordinate)
                     
                     logger.info("Successfully clicked at coordinate \(coordinate)")
-                    return CallTool.Result(content: [.text("Successfully clicked at coordinate \(coordinate)")], isError: false)
+                    return CallTool.Result(content: [.text("Successfully clicked at coordinate \(coordinate). LLM will need to get the the current ui elements in frame to see the effect of the click.")], isError: false)
                 } catch {
                     logger.error("Returned with error: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
