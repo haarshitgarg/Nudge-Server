@@ -9,6 +9,7 @@ struct UIStateTree: Codable, Sendable {
 }
 
 struct UIElementInfo: Codable, Sendable {
+    let id: String // Unique identifier for this element
     let frame: CGRect?
     let description: String?
     let children: [UIElementInfo]

@@ -26,6 +26,11 @@ fileprivate struct ClickAtCoordinate: Decodable {
     let y: Double
 }
 
+fileprivate struct ClickElementById: Decodable {
+    let bundle_identifier: String
+    let element_id: String
+}
+
 struct NavServer: Service {
     private let server: Server
     private let transport: Transport
@@ -56,7 +61,7 @@ struct NavServer: Service {
 
                 Tool(
                     name: "get_state_of_application", 
-                    description: "This tool get the current state of the application. It returns a UI tree in json format of the top level of application that the llm can use to formulate a plan of action",
+                    description: "This tool gets the current state of the application. It returns a UI tree in json format of the top level of application that the llm can use to formulate a plan of action. Each UI element has a unique ID that can be used with click_element_by_id.",
                     inputSchema: .object([
                         "type":"object",
                         "properties": .object([
@@ -68,7 +73,7 @@ struct NavServer: Service {
 
                 Tool(
                     name: "get_ui_elements_in_frame", 
-                    description: "This tool gets UI elements within a specified rectangular frame in the frontmost window of an application. Useful for agents to explore specific areas of the UI.", 
+                    description: "This tool gets actionable UI elements within a specified rectangular frame in the frontmost window of an application. Each element has a unique ID that can be used with click_element_by_id. This is the preferred way to discover UI elements for interaction.", 
                     inputSchema: .object([
                         "type": "object",
                         "properties": .object([
@@ -93,6 +98,19 @@ struct NavServer: Service {
                             "y": .object(["type": "number", "description": "Y coordinate to click at"])
                         ]),
                         "required": .array(["bundle_identifier", "x", "y"])
+                    ])
+                ),
+
+                Tool(
+                    name: "click_element_by_id", 
+                    description: "This tool clicks a UI element by its unique ID using the robust accessibility API (AXUIElementPerformAction). This is the most reliable way to click elements as it directly interacts with the UI element through the system's accessibility framework. The element IDs are obtained from get_ui_elements_in_frame or get_state_of_application tools.", 
+                    inputSchema: .object([
+                        "type": "object",
+                        "properties": .object([
+                            "bundle_identifier": .object(["type": "string", "description": "Bundle identifier of application. For example: com.apple.safari for Safari or com.apple.dt.Xcode for Xcode"]),
+                            "element_id": .object(["type": "string", "description": "Unique ID of the element to click, obtained from get_ui_elements_in_frame or get_state_of_application"])
+                        ]),
+                        "required": .array(["bundle_identifier", "element_id"])
                     ])
                 )
         ]
@@ -202,6 +220,31 @@ struct NavServer: Service {
                     logger.error("Returned with error: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
                 }
+            
+            case "click_element_by_id":
+                logger.info("Attempting to click element by ID")
+                guard let arguments = params.arguments else {
+                    logger.error("Missing arguments for click_element_by_id.")
+                    return CallTool.Result(content: [.text("Missing arguments")], isError: true)
+                }
+
+                do {
+                    let data = try JSONEncoder().encode(arguments)
+                    let clickArgs = try JSONDecoder().decode(ClickElementById.self, from: data)
+                    let bundleIdentifier = clickArgs.bundle_identifier
+                    let elementId = clickArgs.element_id
+                    
+                    logger.info("Attempting to click element with ID \(elementId) in application \(bundleIdentifier)")
+
+                    try await StateManager.shared.clickElementById(applicationIdentifier: bundleIdentifier, elementId: elementId)
+                    
+                    logger.info("Successfully clicked element with ID \(elementId)")
+                    return CallTool.Result(content: [.text("Successfully clicked element with ID \(elementId). LLM will need to get the actionable elements again to see the effect of the click.")], isError: false)
+                } catch {
+                    logger.error("Returned with error: \(error.localizedDescription)")
+                    return CallTool.Result(content: [.text("\(error.localizedDescription)")], isError: true)
+                }
+            
             default:
                 logger.warning("Unknown tool name: \(tool_name)")
                 return CallTool.Result(content: [.text("Unknown tool")], isError: true)

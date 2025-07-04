@@ -10,9 +10,14 @@ actor StateManager {
 
     let log = OSLog(subsystem: "Harshit.NudgeServer", category: "StateManager")
 
-
     /// A dictionary to store UI state trees, keyed by application identifier.
     private var uiStateTrees: [String: UIStateTree] = [:]
+    
+    /// Counter for generating unique element IDs
+    private var elementIdCounter: Int = 0
+    
+    /// Registry to store all discovered UI elements by their IDs across different discovery methods
+    private var elementRegistry: [String: (element: UIElementInfo, axElement: AXUIElement, applicationIdentifier: String)] = [:]
 
     /// Adds or updates a UI state tree for a given application.
     func updateUIStateTree(applicationIdentifier: String) async throws {
@@ -28,6 +33,12 @@ actor StateManager {
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
+        // Reset the ID counter for each tree update to ensure consistent IDs
+        elementIdCounter = 0
+        
+        // Clear existing elements for this application from the registry
+        elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var uiElements: [UIElementInfo] = []
 
@@ -37,7 +48,8 @@ actor StateManager {
 
         if focusedWindowResult == .success {
             let focusedWindow = focusedWindowValue as! AXUIElement
-            uiElements.append(contentsOf: await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 2))
+            let windowElements = await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier)
+            uiElements.append(contentsOf: windowElements)
         } else {
             // Fallback to getting all windows if no focused window is found
             var allWindowsValue: CFTypeRef?
@@ -46,7 +58,8 @@ actor StateManager {
             if allWindowsResult == .success {
                 let allWindows = allWindowsValue as! [AXUIElement]
                 for window in allWindows {
-                    uiElements.append(contentsOf: await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 2))
+                    let windowElements = await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier)
+                    uiElements.append(contentsOf: windowElements)
                 }
             } else {
                 os_log("Could not get any windows for application %@. Error: %d", log: log, type: .error, applicationIdentifier, allWindowsResult.rawValue)
@@ -58,20 +71,34 @@ actor StateManager {
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success {
             let menuBar = menuBarValue as! AXUIElement
-            uiElements.append(contentsOf: await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3))
+            let menuElements = await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3, applicationIdentifier: applicationIdentifier)
+            uiElements.append(contentsOf: menuElements)
         } else {
             os_log("Could not get any menu bar. That is weird", log: log, type: .debug)
             // TODO: To decide if this is strictly necessary. Do all apps require menu bar
             throw NudgeError.invalidRequest(message: "\(applicationIdentifier) doesn't have any accessible menu bars.")
         }
 
+        // Elements are registered during building phase
+
         let newTree = UIStateTree(applicationIdentifier: applicationIdentifier, treeData: uiElements, isStale: false, lastUpdated: Date())
         uiStateTrees[applicationIdentifier] = newTree
         os_log("Successfully updated UI state tree for %@", log: log, type: .debug, applicationIdentifier)
     }
 
+    /// Generates a unique ID for a UI element
+    private func generateElementId() -> String {
+        elementIdCounter += 1
+        return "element_\(elementIdCounter)"
+    }
+
+    /// Registers a UI element with its AXUIElement in the element registry
+    private func registerElement(_ element: UIElementInfo, axElement: AXUIElement, for applicationIdentifier: String) {
+        elementRegistry[element.id] = (element: element, axElement: axElement, applicationIdentifier: applicationIdentifier)
+    }
+
     /// Recursively builds UIElementInfo from an AXUIElement, flattening container elements during collection.
-    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int) async -> [UIElementInfo] {
+    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int, applicationIdentifier: String) async -> [UIElementInfo] {
         // Extract attributes first to determine if this element should be flattened
         let title = getAttribute(element, kAXTitleAttribute) as? String
         let valueAttr = getAttribute(element, kAXValueAttribute) as? String
@@ -131,15 +158,15 @@ actor StateManager {
                 
                 // Get children and add context to them
                 var childrenWithContext: [UIElementInfo] = []
-                if currentDepth < maxDepth {
-                    var value: CFTypeRef?
-                    let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
-                    if result == .success, let axChildren = value as? [AXUIElement] {
-                        for child in axChildren {
-                            childrenWithContext.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                                    if currentDepth < maxDepth {
+                        var value: CFTypeRef?
+                        let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+                        if result == .success, let axChildren = value as? [AXUIElement] {
+                            for child in axChildren {
+                                childrenWithContext.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
+                            }
                         }
                     }
-                }
                 
                 // If we have children, add context to the first actionable child
                 if !childrenWithContext.isEmpty {
@@ -149,6 +176,7 @@ actor StateManager {
                             let existingDesc = childrenWithContext[i].description ?? ""
                             let newDesc = existingDesc.isEmpty ? contextDescription : "\(contextDescription) | \(existingDesc)"
                             let updatedChild = UIElementInfo(
+                                id: childrenWithContext[i].id,
                                 frame: childrenWithContext[i].frame,
                                 description: newDesc,
                                 children: childrenWithContext[i].children
@@ -168,7 +196,7 @@ actor StateManager {
                     let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                     if result == .success, let axChildren = value as? [AXUIElement] {
                         for child in axChildren {
-                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
                         }
                     }
                 }
@@ -198,7 +226,7 @@ actor StateManager {
                 let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                 if result == .success, let axChildren = value as? [AXUIElement] {
                     for child in axChildren {
-                        flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth))
+                        flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
                     }
                 }
             }
@@ -242,7 +270,7 @@ actor StateManager {
             let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
             if result == .success, let axChildren = value as? [AXUIElement] {
                 for child in axChildren {
-                    children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth))
+                    children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
                 }
             }
         }
@@ -265,12 +293,66 @@ actor StateManager {
         }
         
         let elementInfo = UIElementInfo(
+            id: generateElementId(),
             frame: frame,
             description: combinedDescription,
             children: children
         )
         
+        // Register this element with its AXUIElement for later use with performClick
+        registerElement(elementInfo, axElement: element, for: applicationIdentifier)
+        
         return [elementInfo]
+    }
+
+    /// Performs a click action on an AXUIElement using the accessibility API
+    private func performClick(element: AXUIElement) {
+        os_log("Performing click on element, title: %{public}@, type: %{public}@", log: log, type: .debug, getStringAttribute(element, kAXTitleAttribute) ?? "No title", getStringAttribute(element, kAXRoleAttribute) ?? "No role")
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        if result != .success {
+            os_log("Failed to perform click on element, title: %{public}@, type: %{public}@", log: log, type: .error, getStringAttribute(element, kAXTitleAttribute) ?? "No title", getStringAttribute(element, kAXRoleAttribute) ?? "No role")
+        }
+    }
+
+    /// Helper method to get string attributes safely
+    private func getStringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
+        return getAttribute(element, attribute) as? String
+    }
+
+    /// Clicks a UI element by its ID using the robust accessibility API
+    func clickElementById(applicationIdentifier: String, elementId: String) async throws {
+        os_log("Attempting to click element with ID %@ in application %@", log: log, type: .debug, elementId, applicationIdentifier)
+
+        guard AXIsProcessTrusted() else {
+            os_log("Accessibility permissions denied. Cannot click element for %@", log: log, type: .error, applicationIdentifier)
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        // Find the element by ID in the registry
+        guard let registryEntry = elementRegistry[elementId] else {
+            os_log("Element with ID %@ not found in registry", log: log, type: .error, elementId)
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Make sure to call get_state_of_application or get_ui_elements_in_frame first to discover elements.")
+        }
+        
+        // Verify the element belongs to the correct application
+        guard registryEntry.applicationIdentifier == applicationIdentifier else {
+            os_log("Element with ID %@ belongs to different application %@, not %@", log: log, type: .error, elementId, registryEntry.applicationIdentifier, applicationIdentifier)
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' belongs to application '\(registryEntry.applicationIdentifier)', not '\(applicationIdentifier)'")
+        }
+        
+        let element = registryEntry.element
+        let axElement = registryEntry.axElement
+        
+        // Check if the element is actionable
+        guard element.isActionable else {
+            os_log("Element with ID %@ is not actionable", log: log, type: .error, elementId)
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' is not actionable")
+        }
+        
+        // Use the robust accessibility API to perform the click
+        performClick(element: axElement)
+        
+        os_log("Successfully clicked element with ID %@ using accessibility API", log: log, type: .debug, elementId)
     }
 
 
@@ -320,7 +402,7 @@ actor StateManager {
 
         if focusedWindowResult == .success {
             let focusedWindow = focusedWindowValue as! AXUIElement
-            let windowElements = await collectElementsInFrame(from: focusedWindow, targetFrame: frame, currentDepth: 0, maxDepth: 10)
+            let windowElements = await collectElementsInFrame(from: focusedWindow, targetFrame: frame, currentDepth: 0, maxDepth: 10, applicationIdentifier: applicationIdentifier)
             relevantElements.append(contentsOf: windowElements)
         } else {
             // Fallback to getting all windows if no focused window is found
@@ -330,7 +412,7 @@ actor StateManager {
             if allWindowsResult == .success {
                 let allWindows = allWindowsValue as! [AXUIElement]
                 for window in allWindows {
-                    let windowElements = await collectElementsInFrame(from: window, targetFrame: frame, currentDepth: 0, maxDepth: 10)
+                    let windowElements = await collectElementsInFrame(from: window, targetFrame: frame, currentDepth: 0, maxDepth: 10, applicationIdentifier: applicationIdentifier)
                     relevantElements.append(contentsOf: windowElements)
                 }
             } else {
@@ -345,12 +427,14 @@ actor StateManager {
             return element.isActionable
         }
 
+        // Elements are registered during building phase
+
         os_log("Found %d relevant UI elements in frame for %@", log: log, type: .debug, filteredElements.count, applicationIdentifier)
         return filteredElements
     }
 
     /// Recursively collects UI elements that intersect with the target frame.
-    private func collectElementsInFrame(from element: AXUIElement, targetFrame: CGRect, currentDepth: Int, maxDepth: Int) async -> [UIElementInfo] {
+    private func collectElementsInFrame(from element: AXUIElement, targetFrame: CGRect, currentDepth: Int, maxDepth: Int, applicationIdentifier: String) async -> [UIElementInfo] {
         var collectedElements: [UIElementInfo] = []
 
         // Get the frame of the current element
@@ -367,7 +451,7 @@ actor StateManager {
         // Check if this element intersects with the target frame
         if let frame = elementFrame, frame.intersects(targetFrame) {
             // Build the UI element info for this element
-            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0) // Don't recurse here, we'll handle children separately
+            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0, applicationIdentifier: applicationIdentifier) // Don't recurse here, we'll handle children separately
             collectedElements.append(contentsOf: elementInfos)
         }
 
@@ -377,7 +461,7 @@ actor StateManager {
             let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
             if result == .success, let axChildren = value as? [AXUIElement] {
                 for child in axChildren {
-                    let childElements = await collectElementsInFrame(from: child, targetFrame: targetFrame, currentDepth: currentDepth + 1, maxDepth: maxDepth)
+                    let childElements = await collectElementsInFrame(from: child, targetFrame: targetFrame, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier)
                     collectedElements.append(contentsOf: childElements)
                 }
             }
