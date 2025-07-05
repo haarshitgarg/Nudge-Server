@@ -46,7 +46,7 @@ actor StateManager {
 
         if focusedWindowResult == .success {
             let focusedWindow = focusedWindowValue as! AXUIElement
-            let windowElements = await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier)
+            let windowElements = await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier, parentPath: [])
             uiElements.append(contentsOf: windowElements)
         } else {
             // Fallback to getting all windows if no focused window is found
@@ -56,7 +56,7 @@ actor StateManager {
             if allWindowsResult == .success {
                 let allWindows = allWindowsValue as! [AXUIElement]
                 for window in allWindows {
-                    let windowElements = await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier)
+                    let windowElements = await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 2, applicationIdentifier: applicationIdentifier, parentPath: [])
                     uiElements.append(contentsOf: windowElements)
                 }
             } else {
@@ -69,7 +69,7 @@ actor StateManager {
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success {
             let menuBar = menuBarValue as! AXUIElement
-            let menuElements = await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3, applicationIdentifier: applicationIdentifier)
+            let menuElements = await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 3, applicationIdentifier: applicationIdentifier, parentPath: [])
             uiElements.append(contentsOf: menuElements)
         } else {
             os_log("Could not get any menu bar. That is weird", log: log, type: .debug)
@@ -123,7 +123,7 @@ actor StateManager {
     }
 
     /// Recursively builds UIElementInfo from an AXUIElement, flattening container elements during collection.
-    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int, applicationIdentifier: String) async -> [UIElementInfo] {
+    private func buildUIElementInfo(for element: AXUIElement, currentDepth: Int, maxDepth: Int, applicationIdentifier: String, parentPath: [String] = []) async -> [UIElementInfo] {
         // Extract attributes first to determine if this element should be flattened
         let title = getAttribute(element, kAXTitleAttribute) as? String
         let valueAttr = getAttribute(element, kAXValueAttribute) as? String
@@ -188,7 +188,7 @@ actor StateManager {
                         let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                         if result == .success, let axChildren = value as? [AXUIElement] {
                             for child in axChildren {
-                                childrenWithContext.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
+                                childrenWithContext.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier, parentPath: parentPath))
                             }
                         }
                     }
@@ -221,7 +221,7 @@ actor StateManager {
                     let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                     if result == .success, let axChildren = value as? [AXUIElement] {
                         for child in axChildren {
-                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
+                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier, parentPath: parentPath))
                         }
                     }
                 }
@@ -251,7 +251,7 @@ actor StateManager {
                 let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                 if result == .success, let axChildren = value as? [AXUIElement] {
                     for child in axChildren {
-                        flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
+                        flattenedChildren.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier, parentPath: parentPath))
                     }
                 }
             }
@@ -284,16 +284,20 @@ actor StateManager {
         
         let combinedDescription = descriptionParts.isEmpty ? nil : descriptionParts.joined(separator: " ")
 
+        // Generate element ID early so it can be used in the path
+        let elementId = generateElementId()
+        let currentPath = parentPath + [elementId]
+        
         // For non-container elements or containers with meaningful content, build normally
         var children: [UIElementInfo] = []
         if currentDepth < maxDepth {
             var value: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
-            if result == .success, let axChildren = value as? [AXUIElement] {
-                for child in axChildren {
-                    children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier))
-                }
-            }
+                                if result == .success, let axChildren = value as? [AXUIElement] {
+                        for child in axChildren {
+                            children.append(contentsOf: await buildUIElementInfo(for: child, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier, parentPath: currentPath))
+                        }
+                    }
         }
 
         var frame: CGRect? = nil
@@ -313,11 +317,20 @@ actor StateManager {
                    combinedDescription!)
         }
         
+        let elementType = role?.replacingOccurrences(of: "AX", with: "")
+        let hasChildren = !children.isEmpty
+        let isExpandable = await isElementExpandable(element)
+        
         let elementInfo = UIElementInfo(
-            id: generateElementId(),
+            id: elementId,
             frame: frame,
             description: combinedDescription,
-            children: children
+            children: children,
+            elementType: elementType,
+            hasChildren: hasChildren,
+            isExpandable: isExpandable,
+            path: currentPath,
+            role: role
         )
         
         // Only register actionable elements to keep registry clean and focused
@@ -377,8 +390,6 @@ actor StateManager {
         
         os_log("Successfully clicked element with ID %@ using accessibility API", log: log, type: .debug, elementId)
     }
-
-
 
     /// Helper to safely get an attribute from an AXUIElement.
     private func getAttribute(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
@@ -479,7 +490,7 @@ actor StateManager {
         // Check if this element intersects with the target frame
         if let frame = elementFrame, frame.intersects(targetFrame) {
             // Build the UI element info for this element
-            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0, applicationIdentifier: applicationIdentifier) // Don't recurse here, we'll handle children separately
+            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0, applicationIdentifier: applicationIdentifier, parentPath: []) // Don't recurse here, we'll handle children separately
             collectedElements.append(contentsOf: elementInfos)
         }
 
@@ -543,6 +554,177 @@ actor StateManager {
         }
 
         return nil
+    }
+
+    /// Gets UI elements for an application with enhanced features:
+    /// - Auto-opens applications if not running
+    /// - Scans up to 5 levels deep
+    /// - Can target specific screen areas
+    /// - Can expand specific elements for more details
+    func getUIElements(applicationIdentifier: String, frame: UIFrame? = nil, expandElementId: String? = nil) async throws -> [UIElementInfo] {
+        os_log("Getting UI elements for %@ with frame: %@ and expand element: %@", log: log, type: .debug, applicationIdentifier, frame != nil ? "Specified" : "None", expandElementId ?? "None")
+        
+        // Auto-open application if not running
+        if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
+            os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
+            try await openApplication(bundleIdentifier: applicationIdentifier)
+        }
+        
+        // If expanding a specific element, handle that separately
+        if let expandId = expandElementId {
+            return try await getElementChildren(applicationIdentifier: applicationIdentifier, elementId: expandId)
+        }
+        
+        // If frame is specified, get elements in that frame
+        if let targetFrame = frame {
+            return try await getUIElementsInFrame(applicationIdentifier: applicationIdentifier, frame: targetFrame.cgRect)
+        }
+        
+        // Otherwise, get full UI state tree with deep scanning
+        try await updateUIStateTreeDeep(applicationIdentifier: applicationIdentifier)
+        let stateTree = try getUIStateTree(applicationIdentifier: applicationIdentifier)
+        
+        // Return flattened actionable elements
+        return flattenElements(stateTree.treeData).filter { $0.isActionable }
+    }
+    
+    /// Gets children of a specific element for progressive disclosure
+    func getElementChildren(applicationIdentifier: String, elementId: String) async throws -> [UIElementInfo] {
+        os_log("Getting children for element %@ in application %@", log: log, type: .debug, elementId, applicationIdentifier)
+        
+        guard let registryEntry = elementRegistry[elementId] else {
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found")
+        }
+        
+        let axElement = registryEntry.axElement
+        let elementInfo = registryEntry.element
+        
+        // Build children with deeper scanning
+        let children = await buildUIElementInfo(for: axElement, currentDepth: 0, maxDepth: 3, applicationIdentifier: applicationIdentifier, parentPath: elementInfo.path + [elementId])
+        
+        return children.filter { $0.isActionable }
+    }
+    
+    /// Enhanced click function that handles path-based navigation
+    func clickElementByIdWithNavigation(applicationIdentifier: String, elementId: String) async throws {
+        os_log("Attempting to click element %@ with navigation for %@", log: log, type: .debug, elementId, applicationIdentifier)
+        
+        guard let registryEntry = elementRegistry[elementId] else {
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found")
+        }
+        
+        let elementInfo = registryEntry.element
+        let targetElement = registryEntry.axElement
+        
+        // Navigate through the path to reach the element
+        try await navigateToElement(applicationIdentifier: applicationIdentifier, path: elementInfo.path, targetElement: targetElement)
+        
+        os_log("Successfully navigated to and clicked element %@", log: log, type: .info, elementId)
+    }
+    
+    /// Navigates through a path of elements to reach a target
+    private func navigateToElement(applicationIdentifier: String, path: [String], targetElement: AXUIElement) async throws {
+        os_log("Navigating through path with %d elements", log: log, type: .debug, path.count)
+        
+        // Click through each element in the path
+        for elementId in path {
+            guard let pathEntry = elementRegistry[elementId] else {
+                os_log("Path element %@ not found in registry", log: log, type: .error, elementId)
+                continue
+            }
+            
+            let pathElement = pathEntry.axElement
+            
+            // Check if this element needs to be expanded (like menus)
+            if await isElementExpandable(pathElement) {
+                os_log("Expanding path element %@", log: log, type: .debug, elementId)
+                performClick(element: pathElement)
+                
+                // Brief pause to allow UI to update
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+            }
+        }
+        
+        // Finally click the target element
+        performClick(element: targetElement)
+    }
+    
+    /// Checks if an element should be expanded during navigation
+    private func isElementExpandable(_ element: AXUIElement) async -> Bool {
+        guard let role = getAttribute(element, kAXRoleAttribute) as? String else { return false }
+        
+        let expandableRoles = [
+            "AXMenuButton", "AXMenuItem", "AXPopUpButton", "AXMenuBarItem"
+        ]
+        
+        return expandableRoles.contains(role)
+    }
+    
+    /// Flattens a tree of UI elements into a single array
+    private func flattenElements(_ elements: [UIElementInfo]) -> [UIElementInfo] {
+        var flattened: [UIElementInfo] = []
+        
+        for element in elements {
+            flattened.append(element)
+            flattened.append(contentsOf: flattenElements(element.children))
+        }
+        
+        return flattened
+    }
+    
+    /// Updates UI state tree with deeper scanning (5 levels)
+    private func updateUIStateTreeDeep(applicationIdentifier: String) async throws {
+        os_log("Updating UI state tree with deep scanning for %@", log: log, type: .debug, applicationIdentifier)
+
+        guard AXIsProcessTrusted() else {
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
+            throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
+        }
+
+        // Clear existing elements for this application
+        elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var uiElements: [UIElementInfo] = []
+
+        // Get focused window first
+        var focusedWindowValue: CFTypeRef?
+        let focusedWindowResult = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowValue)
+
+        if focusedWindowResult == .success {
+            let focusedWindow = focusedWindowValue as! AXUIElement
+            let windowElements = await buildUIElementInfo(for: focusedWindow, currentDepth: 0, maxDepth: 5, applicationIdentifier: applicationIdentifier, parentPath: [])
+            uiElements.append(contentsOf: windowElements)
+        } else {
+            // Fallback to all windows
+            var allWindowsValue: CFTypeRef?
+            let allWindowsResult = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &allWindowsValue)
+
+            if allWindowsResult == .success {
+                let allWindows = allWindowsValue as! [AXUIElement]
+                for window in allWindows {
+                    let windowElements = await buildUIElementInfo(for: window, currentDepth: 0, maxDepth: 5, applicationIdentifier: applicationIdentifier, parentPath: [])
+                    uiElements.append(contentsOf: windowElements)
+                }
+            }
+        }
+
+        // Get menu bar with deeper scanning
+        var menuBarValue: CFTypeRef?
+        let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
+        if menuBarResult == .success {
+            let menuBar = menuBarValue as! AXUIElement
+            let menuElements = await buildUIElementInfo(for: menuBar, currentDepth: 0, maxDepth: 5, applicationIdentifier: applicationIdentifier, parentPath: [])
+            uiElements.append(contentsOf: menuElements)
+        }
+
+        let newTree = UIStateTree(applicationIdentifier: applicationIdentifier, treeData: uiElements, isStale: false, lastUpdated: Date())
+        uiStateTrees[applicationIdentifier] = newTree
+        
+        os_log("Successfully updated deep UI state tree for %@ with %d elements", log: log, type: .info, applicationIdentifier, uiElements.count)
     }
 
 }
