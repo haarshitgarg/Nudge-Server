@@ -60,20 +60,16 @@ actor StateManager {
         let focusedWindowResult = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowValue)
 
         if focusedWindowResult == .success, let focusedWindow = focusedWindowValue {
-            let windowElement = await buildUIElementTree(for: focusedWindow as! AXUIElement, applicationIdentifier: applicationIdentifier)
-            if let windowElement = windowElement {
-                treeData.append(windowElement)
-            }
+            let windowElements = await buildUIElementTree(for: focusedWindow as! AXUIElement, applicationIdentifier: applicationIdentifier)
+            treeData.append(contentsOf: windowElements)
         }
 
         // Get menu bar
         var menuBarValue: CFTypeRef?
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success, let menuBar = menuBarValue {
-            let menuElement = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier)
-            if let menuElement = menuElement {
-                treeData.append(menuElement)
-            }
+            let menuElements = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier)
+            treeData.append(contentsOf: menuElements)
         }
 
         // Store the tree in ui_state_tree
@@ -84,7 +80,47 @@ actor StateManager {
     }
     
     /// Recursively builds UI element tree with only 3 fields: element_id, description, children
-    private func buildUIElementTree(for element: AXUIElement, applicationIdentifier: String) async -> UIElementInfo? {
+    /// Flattens container elements by returning their children directly
+    private func buildUIElementTree(for element: AXUIElement, applicationIdentifier: String) async -> [UIElementInfo] {
+        // Get element role to determine if it should be flattened
+        guard let role = getAttribute(element, kAXRoleAttribute) as? String else {
+            return []
+        }
+        
+        // Define container roles that should be flattened (not stored, just return their children)
+        let containerRolesToFlatten = [
+            "AXGroup",           // Generic grouping containers - flatten to show actual content
+            "AXScrollArea",      // Scroll areas - flatten to show scrollable content
+            "AXLayoutArea",      // Layout containers - flatten to show arranged content
+            "AXLayoutItem",      // Layout items - flatten to show contained content
+            "AXSplitGroup",      // Split view containers - flatten to show split content
+            "AXToolbar",         // Toolbar containers - flatten to show toolbar buttons
+            "AXTabGroup",        // Tab group containers - flatten to show individual tabs
+            "AXOutline",         // Outline containers - flatten to show outline items
+            "AXList",            // List containers - flatten to show list items
+            "AXTable",           // Table containers - flatten to show table content
+            "AXBrowser",         // Browser containers - flatten to show browser content
+            "AXGenericElement"   // Generic elements - usually non-actionable containers
+        ]
+        
+        // Check if this element should be flattened
+        if containerRolesToFlatten.contains(role) {
+            // Flatten: don't create an element for this container, just return its children
+            var flattenedChildren: [UIElementInfo] = []
+            
+            var childrenValue: CFTypeRef?
+            let childrenResult = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+            
+            if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
+                for child in axChildren {
+                    flattenedChildren.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier))
+                }
+            }
+            
+            return flattenedChildren
+        }
+        
+        // For non-container elements, create the element normally
         let elementId = generateElementId()
         
         // Store the AXUIElement for direct action performance
@@ -100,22 +136,20 @@ actor StateManager {
         
         if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
             for child in axChildren {
-                if let childElement = await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier) {
-                    children.append(childElement)
-                }
+                children.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier))
             }
         }
         
         // Only return elements that are actionable or have actionable children
         if isElementActionable(element) || !children.isEmpty {
-            return UIElementInfo(
+            return [UIElementInfo(
                 element_id: elementId,
                 description: description,
                 children: children
-            )
+            )]
         }
         
-        return nil
+        return []
     }
     
     /// Builds a concise description from element attributes

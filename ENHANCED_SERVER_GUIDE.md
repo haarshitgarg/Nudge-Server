@@ -17,6 +17,63 @@ The Nudge Server now implements a simplified, tree-based architecture with:
 - **Simplified API** with only 2 tools instead of 5
 - **Tree-based structure** enables efficient navigation
 - **Direct AXUIElement performance** for instant clicks
+- **Container flattening** eliminates unnecessary nesting levels
+
+## Container Flattening Optimization
+
+The server automatically flattens container elements that don't provide actionable value to LLM agents. This optimization:
+
+### Flattened Container Types
+- **AXGroup**: Generic grouping containers
+- **AXScrollArea**: Scroll areas (content is promoted) 
+- **AXLayoutArea**: Layout containers
+- **AXLayoutItem**: Layout arrangement items
+- **AXSplitGroup**: Split view containers
+- **AXToolbar**: Toolbar containers (buttons are promoted)
+- **AXTabGroup**: Tab group containers (individual tabs are promoted)
+- **AXOutline**: Outline containers (items are promoted)
+- **AXList**: List containers (items are promoted)
+- **AXTable**: Table containers (content is promoted)
+- **AXBrowser**: Browser containers (content is promoted)
+- **AXGenericElement**: Non-actionable generic elements
+
+### Benefits of Flattening
+- **Reduced tree depth**: Eliminates up to 3-4 levels of unnecessary nesting
+- **Cleaner structure**: Only actionable elements visible to LLM agents
+- **Better performance**: Fewer elements to process and navigate
+- **Improved usability**: Direct access to actionable content
+
+### Example: Before vs After Flattening
+
+**Before** (with containers):
+```
+Window (element_1)
+├── AXGroup (element_2)
+│   ├── AXLayoutArea (element_3)
+│   │   ├── AXGroup (element_4)
+│   │   │   ├── Button "Save" (element_5)
+│   │   │   └── Button "Cancel" (element_6)
+│   │   └── AXScrollArea (element_7)
+│   │       └── AXList (element_8)
+│   │           ├── Text "Item 1" (element_9)
+│   │           └── Text "Item 2" (element_10)
+│   └── AXToolbar (element_11)
+│       ├── Button "New" (element_12)
+│       └── Button "Delete" (element_13)
+```
+
+**After** (flattened):
+```
+Window (element_1)
+├── Button "Save" (element_2)
+├── Button "Cancel" (element_3)
+├── Text "Item 1" (element_4)
+├── Text "Item 2" (element_5)
+├── Button "New" (element_6)
+└── Button "Delete" (element_7)
+```
+
+The flattened structure eliminates 6 unnecessary container levels while preserving all actionable elements.
 
 ## Available Tools
 

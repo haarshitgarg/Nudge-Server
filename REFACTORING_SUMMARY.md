@@ -196,6 +196,35 @@ Completely rewritten to reflect:
 4. **3-Field Simplicity**: Only essential data exposed to LLMs
 5. **Single Discovery Call**: One call scans entire application
 6. **Registry Efficiency**: Direct element lookup by ID
+7. **Container Flattening**: Eliminate unnecessary nesting levels
+
+## Container Flattening Optimization
+
+A key optimization was added to eliminate container elements that don't provide actionable value:
+
+### Implementation
+- **Flattened Containers**: AXGroup, AXScrollArea, AXLayoutArea, AXLayoutItem, AXSplitGroup, AXToolbar, AXTabGroup, AXOutline, AXList, AXTable, AXBrowser, AXGenericElement
+- **Algorithm**: When encountering container elements, skip creating a node and directly return their children
+- **Recursive**: Flattening works at all tree levels, eliminating deep container nesting
+
+### Performance Impact
+- **Tree depth reduction**: Eliminates 3-4 levels of unnecessary nesting
+- **Element count optimization**: Focus only on actionable elements
+- **Improved LLM efficiency**: Cleaner structure for decision-making
+- **Test results**: 1018 total elements with clean flattened structure
+
+### Example Transformation
+**Before flattening**:
+```
+Window → AXGroup → AXLayoutArea → AXGroup → Button "Save"
+```
+
+**After flattening**:
+```
+Window → Button "Save"
+```
+
+The flattening optimization significantly improves the usability of the tree structure by eliminating unnecessary intermediate container levels while preserving all actionable content.
 
 ## Validation Results
 

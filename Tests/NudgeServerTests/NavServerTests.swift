@@ -229,6 +229,60 @@ final class NavServerTests: XCTestCase {
         print("✅ Simplified architecture validation complete")
     }
     
+    func testContainerFlattening() async throws {
+        let appIdentifier = "com.apple.Safari"
+        
+        // Test that container elements like AXGroup are flattened
+        let elements = try await StateManager.shared.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Verify that no container elements are present in the tree
+        let containerRoles = [
+            "AXGroup", "AXScrollArea", "AXLayoutArea", "AXLayoutItem", 
+            "AXSplitGroup", "AXToolbar", "AXTabGroup", "AXOutline", 
+            "AXList", "AXTable", "AXBrowser", "AXGenericElement"
+        ]
+        
+        func verifyNoContainers(_ elements: [UIElementInfo]) {
+            for element in elements {
+                // Check that the description doesn't contain container role names
+                for containerRole in containerRoles {
+                    let cleanRole = containerRole.replacingOccurrences(of: "AX", with: "")
+                    XCTAssertFalse(
+                        element.description.contains("(\(cleanRole))"),
+                        "Found container role \(cleanRole) in element: \(element.description). Container should have been flattened."
+                    )
+                }
+                
+                // Recursively check children
+                verifyNoContainers(element.children)
+            }
+        }
+        
+        verifyNoContainers(elements)
+        
+        // Verify we still have meaningful elements (flattening should preserve actionable content)
+        XCTAssertGreaterThan(elements.count, 0, "Should have elements after flattening")
+        
+        // Count total elements in flattened tree
+        func countElements(_ elements: [UIElementInfo]) -> Int {
+            var count = elements.count
+            for element in elements {
+                count += countElements(element.children)
+            }
+            return count
+        }
+        
+        let totalElements = countElements(elements)
+        print("Container flattening test: \(elements.count) root elements, \(totalElements) total elements")
+        print("✅ Container elements successfully flattened - only actionable elements remain")
+        
+        // Verify that elements have meaningful descriptions
+        for element in elements {
+            XCTAssertFalse(element.description.isEmpty, "Flattened elements should have meaningful descriptions")
+            XCTAssertFalse(element.element_id.isEmpty, "Flattened elements should have valid IDs")
+        }
+    }
+    
     // Helper method to open an application
     private func openApplication(bundleIdentifier: String) async throws {
         let workspace = NSWorkspace.shared
