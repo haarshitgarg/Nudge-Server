@@ -32,8 +32,8 @@ func openApplication(bundleIdentifier: String) async throws {
     while retryCount < maxRetries {
         // Check if the app is now running
         if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) {
-            // App is now running, try to update the UI state tree
-            try await StateManager.shared.updateUIStateTree(applicationIdentifier: bundleIdentifier)
+            // App is now running
+            logger.info("Application \(bundleIdentifier) is now running")
             return
         }
         
@@ -43,6 +43,7 @@ func openApplication(bundleIdentifier: String) async throws {
     }
     
     // If we get here, the app didn't appear in running applications within the timeout
+    logger.error("Application \(bundleIdentifier) did not appear in running applications within the timeout")
     throw NudgeError.applicationLaunchFailed(bundleIdentifier: bundleIdentifier, underlyingError: nil)
 }
 
