@@ -33,11 +33,9 @@ actor StateManager {
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
-        // Reset the ID counter for each tree update to ensure consistent IDs
-        elementIdCounter = 0
-        
-        // Clear existing elements for this application from the registry
+        // Clear existing elements for this application from the registry to avoid stale elements
         elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+        os_log("Cleared existing UI elements for %@ before rebuilding state tree", log: log, type: .debug, applicationIdentifier)
 
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var uiElements: [UIElementInfo] = []
@@ -95,6 +93,33 @@ actor StateManager {
     /// Registers a UI element with its AXUIElement in the element registry
     private func registerElement(_ element: UIElementInfo, axElement: AXUIElement, for applicationIdentifier: String) {
         elementRegistry[element.id] = (element: element, axElement: axElement, applicationIdentifier: applicationIdentifier)
+    }
+
+    /// Clears all UI elements for a specific application from the registry
+    /// This is useful for cleanup when an application's UI state becomes stale
+    func clearElementsForApplication(_ applicationIdentifier: String) {
+        let beforeCount = elementRegistry.count
+        elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+        let afterCount = elementRegistry.count
+        let clearedCount = beforeCount - afterCount
+        os_log("Manually cleared %d UI elements for %@", log: log, type: .debug, clearedCount, applicationIdentifier)
+    }
+
+    /// Clears all UI elements from the registry
+    /// This is useful for complete cleanup or memory management
+    func clearAllElements() {
+        let clearedCount = elementRegistry.count
+        elementRegistry.removeAll()
+        os_log("Cleared all %d UI elements from registry", log: log, type: .debug, clearedCount)
+    }
+
+    /// Gets the current status of the element registry for debugging
+    func getRegistryStatus() -> (totalElements: Int, applicationBreakdown: [String: Int]) {
+        var applicationBreakdown: [String: Int] = [:]
+        for (_, entry) in elementRegistry {
+            applicationBreakdown[entry.applicationIdentifier, default: 0] += 1
+        }
+        return (totalElements: elementRegistry.count, applicationBreakdown: applicationBreakdown)
     }
 
     /// Recursively builds UIElementInfo from an AXUIElement, flattening container elements during collection.
@@ -234,34 +259,30 @@ actor StateManager {
             return flattenedChildren
         }
 
-        // Create combined description from all available text attributes
+        // Create clean, concise description focusing on what's useful for LLM decision-making
         var descriptionParts: [String] = []
         
-        if let role = role {
-            descriptionParts.append("Role: \(role)")
-        }
-        
+        // Start with the most important identifier (title, then value, then role)
         if let title = title, !title.isEmpty {
-            descriptionParts.append("Title: \(title)")
+            descriptionParts.append(title)
+        } else if let valueAttr = valueAttr, !valueAttr.isEmpty {
+            descriptionParts.append(valueAttr)
+        } else if let role = role {
+            // Clean up role name for better readability
+            let cleanRole = role.replacingOccurrences(of: "AX", with: "").lowercased()
+            descriptionParts.append("(\(cleanRole))")
         }
         
-        if let valueAttr = valueAttr, !valueAttr.isEmpty {
-            descriptionParts.append("Value: \(valueAttr)")
+        // Add context if available and different from title
+        if let help = help, !help.isEmpty, help != title {
+            descriptionParts.append("- \(help)")
+        } else if let description = description, !description.isEmpty, description != title {
+            descriptionParts.append("- \(description)")
+        } else if let placeholderValue = placeholderValue, !placeholderValue.isEmpty {
+            descriptionParts.append("- \(placeholderValue)")
         }
         
-        if let help = help, !help.isEmpty {
-            descriptionParts.append("Help: \(help)")
-        }
-        
-        if let description = description, !description.isEmpty {
-            descriptionParts.append("Description: \(description)")
-        }
-        
-        if let placeholderValue = placeholderValue, !placeholderValue.isEmpty {
-            descriptionParts.append("Placeholder: \(placeholderValue)")
-        }
-        
-        let combinedDescription = descriptionParts.isEmpty ? nil : descriptionParts.joined(separator: " | ")
+        let combinedDescription = descriptionParts.isEmpty ? nil : descriptionParts.joined(separator: " ")
 
         // For non-container elements or containers with meaningful content, build normally
         var children: [UIElementInfo] = []
@@ -299,8 +320,10 @@ actor StateManager {
             children: children
         )
         
-        // Register this element with its AXUIElement for later use with performClick
-        registerElement(elementInfo, axElement: element, for: applicationIdentifier)
+        // Only register actionable elements to keep registry clean and focused
+        if elementInfo.isActionable {
+            registerElement(elementInfo, axElement: element, for: applicationIdentifier)
+        }
         
         return [elementInfo]
     }
@@ -392,6 +415,11 @@ actor StateManager {
             os_log("Application %@ not running. Cannot get UI elements.", log: log, type: .error, applicationIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
+
+        // Clear existing elements for this application to avoid stale elements and memory leaks
+        // This ensures each call gets fresh, current UI elements
+        elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+        os_log("Cleared existing UI elements for %@ to ensure fresh discovery", log: log, type: .debug, applicationIdentifier)
 
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var relevantElements: [UIElementInfo] = []

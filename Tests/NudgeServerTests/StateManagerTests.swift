@@ -169,4 +169,50 @@ final class StateManagerTests: XCTestCase {
         return ids
     }
 
+    func testElementRegistryCleanupStrategy() async throws {
+        let appIdentifier = "com.apple.dt.Xcode"
+        try await openApplication(bundleIdentifier: appIdentifier)
+        try await Task.sleep(for: .seconds(10)) // Give Xcode more time to launch
+        
+        // First, get state tree to populate registry
+        try await stateManager.updateUIStateTree(applicationIdentifier: appIdentifier)
+        
+        let initialStatus = await stateManager.getRegistryStatus()
+        XCTAssertGreaterThan(initialStatus.totalElements, 0, "Should have some elements in registry after updateUIStateTree")
+        XCTAssertEqual(initialStatus.applicationBreakdown.count, 1, "Should have elements for exactly one application")
+        XCTAssertNotNil(initialStatus.applicationBreakdown[appIdentifier], "Should have elements for Xcode")
+        
+        // Now call get_ui_elements_in_frame which should clear and repopulate for the same app
+        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let testFrame = CGRect(x: screenFrame.origin.x + 100, y: screenFrame.origin.y + 100, width: 800, height: 600)
+        
+        let uiElements = try await stateManager.getUIElementsInFrame(applicationIdentifier: appIdentifier, frame: testFrame)
+        
+        let afterFrameStatus = await stateManager.getRegistryStatus()
+        XCTAssertEqual(afterFrameStatus.totalElements, uiElements.count, "Registry should contain exactly the same actionable elements returned by getUIElementsInFrame")
+        XCTAssertEqual(afterFrameStatus.applicationBreakdown.count, 1, "Should still have elements for exactly one application")
+        
+        // Verify that all returned elements are actionable (since we only store actionable elements now)
+        for element in uiElements {
+            XCTAssertTrue(element.isActionable, "All returned elements should be actionable")
+        }
+        
+        // Test manual cleanup
+        await stateManager.clearElementsForApplication(appIdentifier)
+        let afterClearStatus = await stateManager.getRegistryStatus()
+        XCTAssertEqual(afterClearStatus.totalElements, 0, "Registry should be empty after clearing application elements")
+        XCTAssertEqual(afterClearStatus.applicationBreakdown.count, 0, "Should have no applications in breakdown")
+        
+        // Test that clicking fails with cleared elements
+        if let firstElement = uiElements.first {
+            do {
+                try await stateManager.clickElementById(applicationIdentifier: appIdentifier, elementId: firstElement.id)
+                XCTFail("Should fail to click element that was cleared from registry")
+            } catch {
+                // This is expected behavior
+                XCTAssertTrue(true, "Correctly failed to click cleared element")
+            }
+        }
+    }
+
 }

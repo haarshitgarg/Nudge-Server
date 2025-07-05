@@ -61,7 +61,7 @@ struct NavServer: Service {
 
                 Tool(
                     name: "get_state_of_application", 
-                    description: "This tool gets the current state of the application. It returns a UI tree in json format of the top level of application that the llm can use to formulate a plan of action. Each UI element has a unique ID that can be used with click_element_by_id.",
+                    description: "This tool gets the current state of the application. It returns a clean, focused JSON of actionable UI elements that the LLM can interact with. Each element has a unique ID for clicking and a concise description. Non-interactive elements are filtered out to reduce noise.",
                     inputSchema: .object([
                         "type":"object",
                         "properties": .object([
@@ -73,7 +73,7 @@ struct NavServer: Service {
 
                 Tool(
                     name: "get_ui_elements_in_frame", 
-                    description: "This tool gets actionable UI elements within a specified rectangular frame in the frontmost window of an application. Each element has a unique ID that can be used with click_element_by_id. This is the preferred way to discover UI elements for interaction.", 
+                    description: "This tool gets actionable UI elements within a specified rectangular frame. Returns clean, focused JSON with only clickable elements (buttons, text fields, links, etc.). Each element has a unique ID and concise description. This is the preferred way to discover UI elements for interaction as it filters out visual noise.", 
                     inputSchema: .object([
                         "type": "object",
                         "properties": .object([

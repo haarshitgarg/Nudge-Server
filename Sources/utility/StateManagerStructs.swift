@@ -33,4 +33,35 @@ struct UIElementInfo: Codable, Sendable {
         
         return actionableRoles.contains { desc.contains($0) }
     }
+    
+    // Custom encoding to produce cleaner JSON
+    enum CodingKeys: String, CodingKey {
+        case id, description
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(description, forKey: .description)
+        // Note: Removed frame and children from JSON output to keep it clean for LLM
+        // The frame is not needed since we use accessibility API for clicking
+        // Children are typically empty for actionable elements after flattening
+    }
+    
+    // Standard initializer for creating UIElementInfo in code
+    init(id: String, frame: CGRect?, description: String?, children: [UIElementInfo]) {
+        self.id = id
+        self.frame = frame
+        self.description = description
+        self.children = children
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        // Set defaults for properties not in JSON
+        frame = nil
+        children = []
+    }
 }
