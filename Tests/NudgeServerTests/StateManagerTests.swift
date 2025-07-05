@@ -16,6 +16,12 @@ final class StateManagerTests: XCTestCase {
         super.tearDown()
     }
 
+    /**
+     * Tests the basic functionality of getting UI elements from a running application.
+     * This test verifies that the StateManager can successfully retrieve UI elements from Xcode
+     * and that each element has the expected structure with valid IDs and descriptions.
+     * It validates the core UI element discovery functionality.
+     */
     func testGetUIElements_ValidApp() async throws {
         let appIdentifier = "com.apple.dt.Xcode"
         
@@ -33,6 +39,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests the auto-opening functionality of the StateManager.
+     * This test verifies that when an application is not running, the StateManager
+     * automatically opens it and then retrieves its UI elements. It validates the
+     * complete workflow from application launch to UI element discovery.
+     */
     func testGetUIElements_AutoOpensApp() async throws {
         let appIdentifier = "com.apple.TextEdit"
         
@@ -49,6 +61,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests that all UI element IDs are unique across the entire tree structure.
+     * This test validates the ID generation system by checking that no two elements
+     * have the same ID, and that all IDs follow the expected format pattern.
+     * This ensures reliable element identification for clicking operations.
+     */
     func testUIElementsHaveUniqueIDs() async throws {
         let appIdentifier = "com.apple.dt.Xcode"
         
@@ -65,6 +83,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests error handling when attempting to click an element with an invalid ID.
+     * This test verifies that the StateManager properly handles cases where a non-existent
+     * element ID is provided, ensuring it throws the appropriate error with a descriptive
+     * message. This validates the error handling and registry lookup functionality.
+     */
     func testClickElementById_InvalidId() async throws {
         let appIdentifier = "com.apple.dt.Xcode"
         
@@ -87,6 +111,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests successful element clicking with a valid element ID.
+     * This test verifies that the StateManager can successfully click an element
+     * using its ID after it has been discovered. It validates the complete
+     * workflow from element discovery to successful interaction.
+     */
     func testClickElementById_ValidId() async throws {
         let appIdentifier = "com.apple.dt.Xcode"
         
@@ -105,6 +135,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests the hierarchical tree structure of UI elements.
+     * This test verifies that the StateManager correctly creates a nested tree
+     * structure where each element and its children have valid IDs and descriptions.
+     * It validates the recursive tree building functionality.
+     */
     func testTreeStructure() async throws {
         let appIdentifier = "com.apple.dt.Xcode"
         
@@ -116,6 +152,12 @@ final class StateManagerTests: XCTestCase {
         }
     }
 
+    /**
+     * Tests the simplified 3-field architecture for UI elements.
+     * This test validates that each UI element has exactly the three required fields:
+     * element_id, description, and children. It ensures the simplified data structure
+     * is maintained throughout the tree, making it optimal for LLM processing.
+     */
     func testSimplifiedArchitecture() async throws {
         let appIdentifier = "com.apple.TextEdit"
         

@@ -231,7 +231,7 @@ actor StateManager {
         }
         
         // Build new tree from the specified element (full depth for updates)
-        let updatedTree = await buildUIElementTree(for: axElement, applicationIdentifier: applicationIdentifier)
+        let updatedTree = await buildUIElementTree(for: axElement, applicationIdentifier: applicationIdentifier, maxDepth: 3)
         
         // Update the internal tree structure by replacing the element
         if let existingTree = uiStateTrees[applicationIdentifier] {

@@ -4,6 +4,12 @@ import AppKit
 
 final class NavServerTests: XCTestCase {
 
+    /**
+     * Tests the basic application opening functionality.
+     * This test verifies that the openApplication helper method successfully launches
+     * Safari and that it appears in the system's list of running applications.
+     * It validates the fundamental application launch capability.
+     */
     func testOpenApplication() async throws {
         let appIdentifier = "com.apple.Safari"
         try await openApplication(bundleIdentifier: appIdentifier)
@@ -11,6 +17,12 @@ final class NavServerTests: XCTestCase {
         XCTAssertNotNil(app, "Safari should be running after openApplication is called.")
     }
     
+    /**
+     * Tests the complete simplified UI element discovery workflow.
+     * This test validates that the StateManager can auto-open Safari, bring it to focus,
+     * and retrieve its UI elements in the simplified 3-field tree structure.
+     * It verifies the end-to-end workflow from application launch to element discovery.
+     */
     func testSimplifiedGetUIElementsWorkflow() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -39,6 +51,12 @@ final class NavServerTests: XCTestCase {
         print("✅ Simplified getUIElements found \(elements.count) elements with tree structure")
     }
     
+    /**
+     * Tests a complete real-world Safari Extensions navigation workflow.
+     * This test demonstrates the performance improvement from the old 4-6 tool workflow
+     * to the new 2-tool workflow. It validates element discovery, clicking, and
+     * workflow completion while comparing old vs new architecture performance.
+     */
     func testSafariExtensionsSimplifiedWorkflow() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -128,6 +146,12 @@ final class NavServerTests: XCTestCase {
         print(performanceMessage)
     }
     
+    /**
+     * Tests hierarchical navigation through the UI element tree structure.
+     * This test validates that the tree structure is correctly formed with proper
+     * parent-child relationships, and that elements at all levels (root, child, grandchild)
+     * have valid IDs and descriptions. It ensures tree navigation functionality.
+     */
     func testTreeStructureNavigation() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -158,6 +182,12 @@ final class NavServerTests: XCTestCase {
         print("Tree structure navigation: \(elements.count) root elements verified")
     }
     
+    /**
+     * Tests the performance of direct AXUIElement clicking.
+     * This test measures the time it takes to click an element using direct
+     * AXUIElement references (stored in the registry) vs path-based traversal.
+     * It validates that the direct approach is fast (< 1 second) and performant.
+     */
     func testDirectAXUIElementPerformance() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -183,6 +213,12 @@ final class NavServerTests: XCTestCase {
         }
     }
     
+    /**
+     * Tests comprehensive validation of the simplified architecture.
+     * This test validates the complete new architecture including auto-opening,
+     * tree-based structure, 3-field elements, direct AXUIElement storage,
+     * and overall system integration. It's a comprehensive system test.
+     */
     func testSimplifiedArchitectureValidation() async throws {
         let appIdentifier = "com.apple.TextEdit"
         
@@ -229,6 +265,12 @@ final class NavServerTests: XCTestCase {
         print("✅ Simplified architecture validation complete")
     }
     
+    /**
+     * Tests the container flattening optimization feature.
+     * This test validates that non-actionable container elements (like AXGroup, AXScrollArea)
+     * are properly flattened from the tree, eliminating unnecessary nesting levels
+     * while preserving all actionable content. It ensures cleaner tree structures for LLM processing.
+     */
     func testContainerFlattening() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -283,6 +325,12 @@ final class NavServerTests: XCTestCase {
         }
     }
     
+    /**
+     * Tests the partial UI tree update functionality.
+     * This test validates that the StateManager can update and return a subtree
+     * for a specific element by its ID, enabling efficient partial updates
+     * without rescanning the entire application. It tests dynamic content handling.
+     */
     func testUpdateUIElementTree() async throws {
         let appIdentifier = "com.apple.Safari"
         
@@ -348,6 +396,12 @@ final class NavServerTests: XCTestCase {
         XCTAssertGreaterThan(updatedElementCount, 0, "Updated tree should have elements")
     }
     
+    /**
+     * Tests the update UI element tree API functionality and registry integration.
+     * This test validates the complete API workflow for updating specific element trees,
+     * including registry lookup, tree building, element structure validation,
+     * and ensuring updated elements remain clickable. It tests API reliability.
+     */
     func testUpdateUIElementTreeAPI() async throws {
         let appIdentifier = "com.apple.Safari"
         
