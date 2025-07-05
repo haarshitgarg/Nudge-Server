@@ -37,7 +37,7 @@ struct NavServer: Service {
         let tools: [Tool] = [
             Tool(
                 name: "get_ui_elements",
-                description: "Get all UI elements for an application in a tree structure. Automatically opens the application if not running, fills ui_state_tree with focused window, menu bar, and all elements. Returns tree with only 3 fields: element_id, description, children. Use this function to get information about the state of the application",
+                description: "Get UI elements for an application in a tree structure with limited depth (2-3 levels). Automatically opens the application if not running, brings it to focus, and fills ui_state_tree with focused window, menu bar, and elements. Returns tree with only 3 fields: element_id, description, children. Use this function to get an overview of the application state - if you need more details about specific elements, use update_ui_element_tree.",
                 inputSchema: .object([
                     "type": "object",
                     "properties": .object([
@@ -120,7 +120,7 @@ struct NavServer: Service {
                         throw NudgeError.invalidRequest(message: "Failed to encode UI elements")
                     }
                     
-                    logger.info("Successfully retrieved \(elements.count) UI elements for \(args.bundle_identifier)")
+                    logger.info("Successfully retrieved \(elements.count) UI elements for \(args.bundle_identifier) with limited depth")
                     return CallTool.Result(content: [.text(elementsString)], isError: false)
                 } catch {
                     logger.error("Error in get_ui_elements: \(error.localizedDescription)")

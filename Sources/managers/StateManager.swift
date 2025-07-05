@@ -30,16 +30,19 @@ actor StateManager {
             try await Task.sleep(for: .seconds(3))
         }
         
-        // Fill the UI state tree with focused window, menu bar, and elements
-        try await fillUIStateTree(applicationIdentifier: applicationIdentifier)
+        // Bring application to front/focus
+        try await focusApplication(bundleIdentifier: applicationIdentifier)
+        
+        // Fill the UI state tree with focused window, menu bar, and elements (limited depth)
+        try await fillUIStateTree(applicationIdentifier: applicationIdentifier, maxDepth: 3)
         
         // Return the tree structure
         return uiStateTrees[applicationIdentifier]?.treeData ?? []
     }
     
     /// Fills the UI state tree with focused window, menu bar, and elements in tree-based format
-    private func fillUIStateTree(applicationIdentifier: String) async throws {
-        os_log("Filling UI state tree for %@", log: log, type: .debug, applicationIdentifier)
+    private func fillUIStateTree(applicationIdentifier: String, maxDepth: Int = Int.max) async throws {
+        os_log("Filling UI state tree for %@ with max depth %d", log: log, type: .debug, applicationIdentifier, maxDepth)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
@@ -60,7 +63,7 @@ actor StateManager {
         let focusedWindowResult = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowValue)
 
         if focusedWindowResult == .success, let focusedWindow = focusedWindowValue {
-            let windowElements = await buildUIElementTree(for: focusedWindow as! AXUIElement, applicationIdentifier: applicationIdentifier)
+            let windowElements = await buildUIElementTree(for: focusedWindow as! AXUIElement, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth)
             treeData.append(contentsOf: windowElements)
         }
 
@@ -68,7 +71,7 @@ actor StateManager {
         var menuBarValue: CFTypeRef?
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success, let menuBar = menuBarValue {
-            let menuElements = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier)
+            let menuElements = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth)
             treeData.append(contentsOf: menuElements)
         }
 
@@ -81,7 +84,12 @@ actor StateManager {
     
     /// Recursively builds UI element tree with only 3 fields: element_id, description, children
     /// Flattens container elements by returning their children directly
-    private func buildUIElementTree(for element: AXUIElement, applicationIdentifier: String) async -> [UIElementInfo] {
+    private func buildUIElementTree(for element: AXUIElement, applicationIdentifier: String, maxDepth: Int = Int.max, currentDepth: Int = 0) async -> [UIElementInfo] {
+        // Check if we've reached the maximum depth
+        if currentDepth >= maxDepth {
+            return []
+        }
+        
         // Get element role to determine if it should be flattened
         guard let role = getAttribute(element, kAXRoleAttribute) as? String else {
             return []
@@ -100,7 +108,12 @@ actor StateManager {
             "AXList",            // List containers - flatten to show list items
             "AXTable",           // Table containers - flatten to show table content
             "AXBrowser",         // Browser containers - flatten to show browser content
-            "AXGenericElement"   // Generic elements - usually non-actionable containers
+            "AXGenericElement",  // Generic elements - usually non-actionable containers
+            "AXSplitter",        // Splitter containers - flatten to show split panes
+            "AXDockItem",        // Dock items - flatten to show dock content
+            "AXDrawer",          // Drawer containers - flatten to show drawer content
+            "AXPane",            // Pane containers - flatten to show pane content
+            "AXSplitLayoutArea"  // Split layout containers - flatten to show layout content
         ]
         
         // Check if this element should be flattened
@@ -113,12 +126,14 @@ actor StateManager {
             
             if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
                 for child in axChildren {
-                    flattenedChildren.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier))
+                    flattenedChildren.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth, currentDepth: currentDepth))
                 }
             }
             
             return flattenedChildren
         }
+        
+
         
         // For non-container elements, create the element normally
         let elementId = generateElementId()
@@ -136,7 +151,7 @@ actor StateManager {
         
         if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
             for child in axChildren {
-                children.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier))
+                children.append(contentsOf: await buildUIElementTree(for: child, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth, currentDepth: currentDepth + 1))
             }
         }
         
@@ -213,7 +228,7 @@ actor StateManager {
             throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first to populate the tree.")
         }
         
-        // Build new tree from the specified element
+        // Build new tree from the specified element (full depth for updates)
         let updatedTree = await buildUIElementTree(for: axElement, applicationIdentifier: applicationIdentifier)
         
         // Update the internal tree structure by replacing the element
@@ -272,6 +287,25 @@ actor StateManager {
         } catch {
             throw NudgeError.applicationNotFound(bundleIdentifier: bundleIdentifier)
         }
+    }
+    
+    /// Brings an application to the front/focus
+    private func focusApplication(bundleIdentifier: String) async throws {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) else {
+            throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
+        }
+        
+        // Activate the application to bring it to the front
+        if #available(macOS 14.0, *) {
+            app.activate()
+        } else {
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        
+        // Give the application time to come to the front
+        try await Task.sleep(for: .seconds(1))
+        
+        os_log("Successfully focused application %@", log: log, type: .info, bundleIdentifier)
     }
     
     /// Generates a unique element ID
