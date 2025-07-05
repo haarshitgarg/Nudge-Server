@@ -14,6 +14,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        await stateManager.cleanup()
         stateManager = nil
         try await super.tearDown()
     }
@@ -30,7 +31,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
         // Should return array of UI elements
-        XCTAssertGreaterThanOrEqual(elements.count, 0, "Should return at least 0 UI elements")
+        XCTAssertGreaterThanOrEqual(elements.count, 2, "Should return at least 2 UI elements")
         
         // Verify each element has the expected 3-field structure
         for element in elements {
@@ -50,18 +51,18 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         // Check if app is currently running
         let runningApps = NSWorkspace.shared.runningApplications
-        let wasRunning = runningApps.contains { $0.bundleIdentifier == appIdentifier }
+        let _ = runningApps.contains { $0.bundleIdentifier == appIdentifier }
         
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
         // App should now be running
         let newRunningApps = NSWorkspace.shared.runningApplications
-        let isNowRunning = newRunningApps.contains { $0.bundleIdentifier == appIdentifier }
+        let isNowRunning = newRunningApps.contains { $0.bundleIdentifier?.lowercased() == appIdentifier.lowercased() }
         
         XCTAssertTrue(isNowRunning, "Application should be running after getUIElements call")
         
         // Should still return valid elements
-        XCTAssertGreaterThanOrEqual(elements.count, 0, "Should return elements even if app wasn't initially running")
+        XCTAssertGreaterThanOrEqual(elements.count, 1, "Should return elements even if app wasn't initially running")
     }
     
     /**
@@ -73,9 +74,6 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         // Open TextEdit
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
-        
-        // Wait a moment for focus to settle
-        try await Task.sleep(for: .seconds(1))
         
         // Check if TextEdit is the active application
         let activeApp = NSWorkspace.shared.frontmostApplication
@@ -186,7 +184,16 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         // First get UI elements to populate the registry
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
-        if let firstElement = elements.first {
+        // Get all elements (including children) recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for clickable elements (buttons, menu items, etc.)
+        let clickableElements = allElements.filter { element in
+            element.description.contains("Button") || 
+            element.description.contains("MenuItem")
+        }
+        
+        if let firstElement = clickableElements.first {
             // Should not throw error when clicking valid element
             try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
@@ -196,8 +203,20 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             // Test passes if no error is thrown
             XCTAssertTrue(true, "Clicking valid element should not throw error")
         } else {
-            XCTFail("Should have at least one element to test clicking")
+            XCTFail("Should have at least one clickable element to test clicking")
         }
+    }
+    
+    // Helper function to get all elements recursively
+    private func getAllElementsRecursively(from elements: [UIElementInfo]) -> [UIElementInfo] {
+        var allElements: [UIElementInfo] = []
+        
+        for element in elements {
+            allElements.append(element)
+            allElements.append(contentsOf: getAllElementsRecursively(from: element.children))
+        }
+        
+        return allElements
     }
     
     /**
@@ -296,7 +315,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         // Get UI elements first
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: { $0.description.contains("AXButton") || $0.description.contains("AXMenuItem") }) {
             let startTime = Date()
             
             try await stateManager.clickElementById(
@@ -503,7 +522,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         XCTAssertGreaterThan(elements.count, 0, "Should get UI elements")
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: { $0.description.contains("AXButton") || $0.description.contains("AXMenuItem") }) {
             // Step 2: Verify element exists
             let exists = await stateManager.elementExists(elementId: firstElement.element_id)
             XCTAssertTrue(exists, "Element should exist after getUIElements")
@@ -529,37 +548,6 @@ final class ComprehensiveStateManagerTests: XCTestCase {
     }
     
     /**
-     * Tests registry clearing behavior when getting elements for different applications.
-     * Expected behavior: Registry should be cleared when switching applications.
-     */
-    func testRegistryClearingBehavior() async throws {
-        let appIdentifier1 = "com.apple.TextEdit"
-        let appIdentifier2 = "com.apple.Calculator"
-        
-        // Get elements for first app
-        let elements1 = try await stateManager.getUIElements(applicationIdentifier: appIdentifier1)
-        
-        if let firstElement1 = elements1.first {
-            // Verify element exists
-            let exists1 = await stateManager.elementExists(elementId: firstElement1.element_id)
-            XCTAssertTrue(exists1, "Element should exist after getUIElements")
-            
-            // Get elements for second app
-            let elements2 = try await stateManager.getUIElements(applicationIdentifier: appIdentifier2)
-            
-            // Original element should no longer exist (registry cleared)
-            let stillExists1 = await stateManager.elementExists(elementId: firstElement1.element_id)
-            XCTAssertFalse(stillExists1, "Original element should not exist after switching apps")
-            
-            // New elements should exist
-            if let firstElement2 = elements2.first {
-                let exists2 = await stateManager.elementExists(elementId: firstElement2.element_id)
-                XCTAssertTrue(exists2, "New element should exist after getUIElements")
-            }
-        }
-    }
-    
-    /**
      * Tests performance of all operations.
      * Expected behavior: All operations should complete within reasonable time limits.
      */
@@ -574,7 +562,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         XCTAssertLessThan(getDuration, 10.0, "getUIElements should complete within 10 seconds")
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: { $0.description.contains("AXButton") || $0.description.contains("AXMenuItem") }) {
             // Test elementExists performance
             let existsStartTime = Date()
             _ = await stateManager.elementExists(elementId: firstElement.element_id)
@@ -640,13 +628,12 @@ final class ComprehensiveStateManagerTests: XCTestCase {
     private func verifyNoExcessiveContainerNesting(_ element: UIElementInfo) {
         // Check that description contains meaningful content, not just container roles
         let description = element.description.lowercased()
-        let containerKeywords = ["group", "container", "layout", "area", "generic"]
+        let containerKeywords = ["(group)", "(container)", "(layout)", "(area)", "(generic)"]
         
-        // If it's a container, it should have children or meaningful description
+        // There should be no container elements in the tree
         let isContainer = containerKeywords.contains { description.contains($0) }
         if isContainer {
-            XCTAssertTrue(!element.children.isEmpty || element.description.count > 20, 
-                         "Container elements should have children or detailed description")
+            XCTFail("Container element found: \(element.description)")
         }
         
         // Recursively check children

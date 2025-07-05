@@ -12,6 +12,7 @@ final class WorkflowIntegrationTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        await stateManager.cleanup()
         stateManager = nil
         try await super.tearDown()
     }
@@ -29,7 +30,7 @@ final class WorkflowIntegrationTests: XCTestCase {
         let elements = try await stateManager.getUIElements(applicationIdentifier: bundleId)
         XCTAssertGreaterThan(elements.count, 0, "Should discover UI elements")
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
             // Step 2: Verify element exists
             let exists = await stateManager.elementExists(elementId: firstElement.element_id)
             XCTAssertTrue(exists, "Element should exist after getUIElements")
@@ -71,7 +72,7 @@ final class WorkflowIntegrationTests: XCTestCase {
         
         // Test interaction with different applications
         for (app, elements) in appElements {
-            if let firstElement = elements.first {
+            if let firstElement = elements.first (where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
                 // Should be able to interact with elements from any app
                 try await stateManager.clickElementById(
                     applicationIdentifier: app,
@@ -98,7 +99,7 @@ final class WorkflowIntegrationTests: XCTestCase {
         XCTAssertGreaterThan(elements.count, 0, "Should discover Safari elements")
         
         // Look for actionable elements
-        let actionableElements = elements.filter { element in
+        let actionableElements = findElements(in: elements) { element in
             let desc = element.description.lowercased()
             return desc.contains("button") || desc.contains("menu") || desc.contains("field")
         }
@@ -174,8 +175,8 @@ final class WorkflowIntegrationTests: XCTestCase {
         let getElementsTime = Date().timeIntervalSince(startTime)
         
         XCTAssertLessThan(getElementsTime, 10.0, "Getting elements should complete within 10 seconds")
-        
-        if let firstElement = elements.first {
+
+        if let firstElement = elements.first(where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
             let clickStartTime = Date()
             try await stateManager.clickElementById(
                 applicationIdentifier: bundleId,
@@ -257,7 +258,7 @@ final class WorkflowIntegrationTests: XCTestCase {
         }
         
         // Verify that valid operations still work after the error
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
             try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: firstElement.element_id
@@ -283,38 +284,42 @@ final class WorkflowIntegrationTests: XCTestCase {
         let calculatorId = "com.apple.Calculator"
         let calcElements = try await stateManager.getUIElements(applicationIdentifier: calculatorId)
         
-        // Look for specific UI patterns
-        let buttons = calcElements.filter { $0.description.lowercased().contains("button") }
-        let digits = calcElements.filter { 
-            let desc = $0.description.lowercased()
+        
+        
+        let buttons = findElements(in: calcElements) { $0.description.lowercased().contains("button") }
+        
+        let digits = findElements(in: calcElements) { element in
+            let desc = element.description.lowercased()
             return desc.contains("button") && (0...9).contains { desc.contains("\($0)") }
         }
         
         print("Calculator: Found \(buttons.count) buttons, \(digits.count) digit buttons")
         XCTAssertGreaterThan(buttons.count, 0, "Should find buttons in Calculator")
-        
-        // Scenario 2: Text editing workflow
-        let textEditId = "com.apple.TextEdit"
-        let textElements = try await stateManager.getUIElements(applicationIdentifier: textEditId)
-        
-        let menus = textElements.filter { $0.description.lowercased().contains("menu") }
-        let textFields = textElements.filter { 
-            let desc = $0.description.lowercased()
-            return desc.contains("text") && (desc.contains("field") || desc.contains("area"))
-        }
-        
-        print("TextEdit: Found \(menus.count) menus, \(textFields.count) text fields")
-        XCTAssertGreaterThanOrEqual(textElements.count, 0, "Should find elements in TextEdit")
-        
+
         // Test interaction with found elements
         if let button = buttons.first {
+            print("Clicking button: \(button.description)")
             try await stateManager.clickElementById(
                 applicationIdentifier: calculatorId,
                 elementId: button.element_id
             )
         }
         
+        // Scenario 2: Text editing workflow
+        let textEditId = "com.apple.TextEdit"
+        let textElements = try await stateManager.getUIElements(applicationIdentifier: textEditId)
+        
+        let menus = findElements(in: textElements) { $0.description.lowercased().contains("menu") }
+        let textFields = findElements(in: textElements) { element in
+            let desc = element.description.lowercased()
+            return desc.contains("text") && (desc.contains("field") || desc.contains("area"))
+        }
+        
+        print("TextEdit: Found \(menus.count) menus, \(textFields.count) text fields")
+        XCTAssertGreaterThanOrEqual(textElements.count, 0, "Should find elements in TextEdit")
+        
         if let menu = menus.first {
+            print("Clicking menu: \(menu.description)")
             try await stateManager.clickElementById(
                 applicationIdentifier: textEditId,
                 elementId: menu.element_id
@@ -322,3 +327,17 @@ final class WorkflowIntegrationTests: XCTestCase {
         }
     }
 } 
+
+// Look for specific UI patterns recursively
+func findElements(in elements: [UIElementInfo], matching predicate: (UIElementInfo) -> Bool)
+    -> [UIElementInfo]
+{
+    var matches: [UIElementInfo] = []
+    for element in elements {
+        if predicate(element) {
+            matches.append(element)
+        }
+        matches.append(contentsOf: findElements(in: element.children, matching: predicate))
+    }
+    return matches
+}

@@ -14,6 +14,7 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        await stateManager.cleanup()
         stateManager = nil
         try await super.tearDown()
     }
@@ -355,7 +356,7 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         }
         
         // Verify that valid operations still work after the error
-        if let firstElement = elements.first {
+        if let firstElement = elements.first (where: { $0.description.contains("Button") || $0.description.contains("MenuItem") }) {
             // This should work despite the previous error
             try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,

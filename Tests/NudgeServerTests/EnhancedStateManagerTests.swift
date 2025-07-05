@@ -12,6 +12,7 @@ final class EnhancedStateManagerTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        await stateManager.cleanup()
         stateManager = nil
         try await super.tearDown()
     }
@@ -95,7 +96,7 @@ final class EnhancedStateManagerTests: XCTestCase {
         
         // Check if app is running after test
         let runningAppsAfter = NSWorkspace.shared.runningApplications
-        let isNowRunning = runningAppsAfter.contains { $0.bundleIdentifier == bundleId }
+        let isNowRunning = runningAppsAfter.contains { $0.bundleIdentifier?.lowercased() == bundleId.lowercased() }
         
         XCTAssertTrue(isNowRunning, "Application should be running after getUIElements")
         XCTAssertGreaterThanOrEqual(elements.count, 0, "Should return elements after auto-opening")
@@ -138,7 +139,7 @@ final class EnhancedStateManagerTests: XCTestCase {
         // Get elements first
         let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: { $0.description.contains("Button") || $0.description.contains("MenuItem") }) {
             let startTime = Date()
             
             try await stateManager.clickElementById(
@@ -276,7 +277,7 @@ final class EnhancedStateManagerTests: XCTestCase {
         
         XCTAssertLessThan(getDuration, 10.0, "getUIElements should complete within 10 seconds")
         
-        if let firstElement = elements.first {
+        if let firstElement = elements.first(where: { $0.description.contains("Button") || $0.description.contains("MenuItem") }) {
             // Test elementExists performance
             let existsStartTime = Date()
             _ = await stateManager.elementExists(elementId: firstElement.element_id)

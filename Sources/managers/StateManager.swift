@@ -349,7 +349,9 @@ actor StateManager {
     private func clearElementsForApplication(_ applicationIdentifier: String) {
         // Remove from registry - for simplicity, we'll clear all elements when refreshing any app
         elementRegistry.removeAll()
-        elementIdCounter = 0
+        if( elementIdCounter >= 500) {
+            elementIdCounter = 0
+        }
     }
     
     /// Helper to safely get an attribute from an AXUIElement
@@ -361,7 +363,7 @@ actor StateManager {
 
     /// Clicks a UI element by its ID using direct AXUIElement reference
     func clickElementById(applicationIdentifier: String, elementId: String) async throws {
-        os_log("Clicking element %@ for %@", log: log, type: .debug, elementId, applicationIdentifier)
+        os_log("Clicking element %{public}@ for %{public}@", log: log, type: .debug, elementId, applicationIdentifier)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
@@ -370,6 +372,9 @@ actor StateManager {
         guard let axElement = elementRegistry[elementId] else {
             throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
         }
+
+        let elementType = getAttribute(axElement, kAXRoleAttribute) as? String
+        os_log("Element type: %{public}@", log: log, type: .debug, elementType ?? "Unknown")
         
         // Perform click action directly on AXUIElement
         let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
@@ -383,5 +388,13 @@ actor StateManager {
     /// Checks if an element exists in the registry (for testing)
     func elementExists(elementId: String) -> Bool {
         return elementRegistry[elementId] != nil
+    }
+
+    public func cleanup() {
+        elementRegistry.removeAll()
+        if(elementIdCounter >= 500) {
+            elementIdCounter = 0
+        }
+        uiStateTrees.removeAll()
     }
 } 
