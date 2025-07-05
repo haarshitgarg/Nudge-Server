@@ -78,96 +78,76 @@ The flattened structure eliminates 6 unnecessary container levels while preservi
 ## Available Tools
 
 ### 1. `get_ui_elements`
-
-**Purpose**: Get all UI elements for an application in a tree structure. Automatically opens the application if not running.
+- **Description**: Get all UI elements for an application in a tree structure
+- **Auto-opens**: Application if not running
+- **Returns**: Complete tree with focused window, menu bar, and all elements
+- **Performance**: Single call covers entire application
 
 **Parameters**:
-```json
-{
-  "bundle_identifier": "com.apple.safari"
-}
-```
+- `bundle_identifier`: Application bundle ID (e.g., "com.apple.safari")
 
-**What it does**:
-1. Checks if application is running
-2. If not, opens it automatically 
-3. Fills `ui_state_tree` with:
-   - Focused window
-   - Menu bar
-   - All elements in tree format
-4. Stores AXUIElement references for direct action
-5. Returns tree with only 3 fields
-
-**Response Structure**:
-```json
-[
-  {
-    "element_id": "element_1",
-    "description": "Safari (Application)",
-    "children": [
-      {
-        "element_id": "element_2", 
-        "description": "File (MenuBarItem)",
-        "children": [...]
-      }
-    ]
-  }
-]
-```
+**Response**: Tree structure with 3 fields per element:
+- `element_id`: Unique identifier for clicking
+- `description`: Human-readable element description
+- `children`: Nested array of child elements
 
 ### 2. `click_element_by_id`
-
-**Purpose**: Click a UI element by its ID using direct AXUIElement reference.
+- **Description**: Click a UI element using direct AXUIElement reference
+- **Performance**: ~0.1 seconds for instant clicks
+- **Reliability**: Direct system calls, no coordinate calculations
 
 **Parameters**:
-```json
-{
-  "bundle_identifier": "com.apple.safari",
-  "element_id": "element_123"
-}
-```
+- `bundle_identifier`: Application bundle ID
+- `element_id`: Element ID from `get_ui_elements`
 
-**What it does**:
-1. Looks up AXUIElement by ID in registry
-2. Performs direct click action using accessibility API
-3. Maximum performance with no coordinate calculations
+**Response**: Confirmation message with update suggestion
+
+### 3. `update_ui_element_tree`
+- **Description**: Update and return the UI element tree for a specific element
+- **Efficiency**: Partial tree updates without rescanning entire application
+- **Use cases**: Dynamic content changes, expanding tree views, loading new content
+
+**Parameters**:
+- `bundle_identifier`: Application bundle ID
+- `element_id`: Element ID to update and return tree from
+
+**Response**: Updated tree structure from the specified element
 
 ## Example Workflows
 
-### Safari Extensions (2 tool calls)
-
-**OLD workflow (4-6 calls)**:
-1. `open_application("com.apple.safari")`
-2. `get_ui_elements_in_frame(safari, full_screen)`
-3. `click_element_by_id(safari, "safari_menu")`
-4. `get_ui_elements_in_frame(safari, menu_area)`
-5. `click_element_by_id(safari, "extensions_item")`
-6. `get_ui_elements_in_frame(safari, extensions_area)`
-
-**NEW workflow (2 calls)**:
-1. `get_ui_elements("com.apple.safari")` // Auto-opens, tree structure
-2. `click_element_by_id("element_123")` // Direct AXUIElement click
-
-### System Preferences (2 tool calls)
-
+### Basic Navigation (2 tool calls)
 ```json
-// 1. Get UI elements (auto-opens app)
-{
-  "tool_name": "get_ui_elements",
-  "parameters": {
-    "bundle_identifier": "com.apple.systempreferences"
-  }
-}
+1. get_ui_elements:
+   {"bundle_identifier": "com.apple.safari"}
 
-// 2. Click on desired element
-{
-  "tool_name": "click_element_by_id", 
-  "parameters": {
-    "bundle_identifier": "com.apple.systempreferences",
-    "element_id": "element_42"
-  }
-}
+2. click_element_by_id:
+   {"bundle_identifier": "com.apple.safari", "element_id": "element_45"}
 ```
+
+### Dynamic Content Update (3 tool calls)
+```json
+1. get_ui_elements:
+   {"bundle_identifier": "com.apple.safari"}
+
+2. click_element_by_id:
+   {"bundle_identifier": "com.apple.safari", "element_id": "element_12"}
+
+3. update_ui_element_tree:
+   {"bundle_identifier": "com.apple.safari", "element_id": "element_12"}
+```
+
+**Use case**: After clicking a button that expands a tree view or loads new content, use `update_ui_element_tree` to get the updated structure for that specific element without rescanning the entire application.
+
+### Focused Element Exploration (2 tool calls)
+```json
+1. get_ui_elements:
+   {"bundle_identifier": "com.apple.finder"}
+
+2. update_ui_element_tree:
+   {"bundle_identifier": "com.apple.finder", "element_id": "element_25"}
+```
+
+**Use case**: Focus on a specific part of the UI (like a sidebar or content area) and get its current tree structure for detailed navigation.
 
 ## Response Format
 

@@ -283,6 +283,139 @@ final class NavServerTests: XCTestCase {
         }
     }
     
+    func testUpdateUIElementTree() async throws {
+        let appIdentifier = "com.apple.Safari"
+        
+        // First, get the initial UI elements
+        let initialElements = try await StateManager.shared.getUIElements(applicationIdentifier: appIdentifier)
+        XCTAssertGreaterThan(initialElements.count, 0, "Should have initial elements")
+        
+        // Find an element to update (get first element with children)
+        func findElementWithChildren(_ elements: [UIElementInfo]) -> UIElementInfo? {
+            for element in elements {
+                if !element.children.isEmpty {
+                    return element
+                }
+                if let childWithChildren = findElementWithChildren(element.children) {
+                    return childWithChildren
+                }
+            }
+            return nil
+        }
+        
+        guard let elementToUpdate = findElementWithChildren(initialElements) else {
+            XCTFail("Should find at least one element with children for testing")
+            return
+        }
+        
+        // Update the specific element tree
+        let updatedTree = try await StateManager.shared.updateUIElementTree(
+            applicationIdentifier: appIdentifier,
+            elementId: elementToUpdate.element_id
+        )
+        
+        // Verify the updated tree structure
+        XCTAssertGreaterThan(updatedTree.count, 0, "Updated tree should have elements")
+        
+        // Verify that all elements have valid IDs and descriptions
+        func verifyTreeStructure(_ elements: [UIElementInfo]) {
+            for element in elements {
+                XCTAssertFalse(element.element_id.isEmpty, "Element should have valid ID")
+                XCTAssertFalse(element.description.isEmpty, "Element should have valid description")
+                verifyTreeStructure(element.children)
+            }
+        }
+        
+        verifyTreeStructure(updatedTree)
+        
+        // Count elements in updated tree
+        func countElements(_ elements: [UIElementInfo]) -> Int {
+            var count = elements.count
+            for element in elements {
+                count += countElements(element.children)
+            }
+            return count
+        }
+        
+        let updatedElementCount = countElements(updatedTree)
+        
+        print("Update UI element tree test:")
+        print("   • Target element: \(elementToUpdate.element_id)")
+        print("   • Updated tree elements: \(updatedTree.count) root, \(updatedElementCount) total")
+        print("   • ✅ Successfully updated specific element tree")
+        
+        // Verify the tree structure is still valid
+        XCTAssertGreaterThan(updatedElementCount, 0, "Updated tree should have elements")
+    }
+    
+    func testUpdateUIElementTreeAPI() async throws {
+        let appIdentifier = "com.apple.Safari"
+        
+        // First, get the initial UI elements to have a populated tree
+        let initialElements = try await StateManager.shared.getUIElements(applicationIdentifier: appIdentifier)
+        XCTAssertGreaterThan(initialElements.count, 0, "Should have initial elements")
+        
+        // Find an element to update (prefer one with children)
+        func findSuitableElement(_ elements: [UIElementInfo]) -> UIElementInfo? {
+            for element in elements {
+                if !element.children.isEmpty {
+                    return element
+                }
+                if let childWithChildren = findSuitableElement(element.children) {
+                    return childWithChildren
+                }
+            }
+            return nil
+        }
+        
+        guard let elementToUpdate = findSuitableElement(initialElements) else {
+            XCTFail("Should find at least one element for testing")
+            return
+        }
+        
+        // Test the API directly through StateManager
+        let updatedTree = try await StateManager.shared.updateUIElementTree(
+            applicationIdentifier: appIdentifier,
+            elementId: elementToUpdate.element_id
+        )
+        
+        // Verify the API response
+        XCTAssertGreaterThan(updatedTree.count, 0, "API should return updated tree")
+        
+        // Verify all elements have proper structure
+        for element in updatedTree {
+            XCTAssertFalse(element.element_id.isEmpty, "Element should have valid ID")
+            XCTAssertFalse(element.description.isEmpty, "Element should have valid description")
+            
+            // Check if element exists in registry (should be able to click)
+            let elementExists = await StateManager.shared.elementExists(elementId: element.element_id)
+            XCTAssertTrue(
+                elementExists,
+                "Element \(element.element_id) should be in registry after update"
+            )
+        }
+        
+        // Count elements in updated tree
+        func countElements(_ elements: [UIElementInfo]) -> Int {
+            var count = elements.count
+            for element in elements {
+                count += countElements(element.children)
+            }
+            return count
+        }
+        
+        let updatedElementCount = countElements(updatedTree)
+        
+        print("Update UI element tree API test:")
+        print("   • Target element: \(elementToUpdate.element_id)")
+        print("   • Description: \(elementToUpdate.description)")
+        print("   • Updated tree: \(updatedTree.count) root, \(updatedElementCount) total elements")
+        print("   • ✅ API workflow successful")
+        
+        // Verify the tree is properly updated
+        XCTAssertGreaterThan(updatedElementCount, 0, "Updated tree should have elements")
+    }
+    
     // Helper method to open an application
     private func openApplication(bundleIdentifier: String) async throws {
         let workspace = NSWorkspace.shared

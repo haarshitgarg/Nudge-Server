@@ -200,27 +200,65 @@ actor StateManager {
         return actionableRoles.contains(role)
     }
     
-    /// Clicks a UI element by its ID using direct AXUIElement reference
-    func clickElementById(applicationIdentifier: String, elementId: String) async throws {
-        os_log("Clicking element %@ for %@", log: log, type: .debug, elementId, applicationIdentifier)
+    /// Updates and returns the UI element tree for a specific element by its ID
+    /// This allows for efficient partial tree updates without rescanning the entire application
+    func updateUIElementTree(applicationIdentifier: String, elementId: String) async throws -> [UIElementInfo] {
+        os_log("Updating UI element tree for element %@ in %@", log: log, type: .debug, elementId, applicationIdentifier)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
         }
 
         guard let axElement = elementRegistry[elementId] else {
-            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first to populate the tree.")
         }
         
-        // Perform click action directly on AXUIElement
-        let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
-        if result != .success {
-            throw NudgeError.invalidRequest(message: "Failed to click element with ID '\(elementId)'")
+        // Build new tree from the specified element
+        let updatedTree = await buildUIElementTree(for: axElement, applicationIdentifier: applicationIdentifier)
+        
+        // Update the internal tree structure by replacing the element
+        if let existingTree = uiStateTrees[applicationIdentifier] {
+            // Find and replace the element in the existing tree
+            let updatedTreeData = replaceElementInTree(existingTree.treeData, targetElementId: elementId, newTree: updatedTree)
+            
+            // Create a new tree with updated data
+            let newTree = UIStateTree(
+                applicationIdentifier: applicationIdentifier,
+                treeData: updatedTreeData,
+                isStale: false,
+                lastUpdated: Date()
+            )
+            
+            uiStateTrees[applicationIdentifier] = newTree
+            
+            os_log("Successfully updated UI element tree for %@ with %d elements", log: log, type: .info, elementId, updatedTree.count)
         }
         
-        os_log("Successfully clicked element %@", log: log, type: .info, elementId)
+        return updatedTree
     }
     
+    /// Helper method to replace an element in the tree structure
+    private func replaceElementInTree(_ tree: [UIElementInfo], targetElementId: String, newTree: [UIElementInfo]) -> [UIElementInfo] {
+        var updatedTree: [UIElementInfo] = []
+        
+        for element in tree {
+            if element.element_id == targetElementId {
+                // Replace this element with the new tree
+                updatedTree.append(contentsOf: newTree)
+            } else {
+                // Keep the element but check its children recursively
+                let updatedChildren = replaceElementInTree(element.children, targetElementId: targetElementId, newTree: newTree)
+                updatedTree.append(UIElementInfo(
+                    element_id: element.element_id,
+                    description: element.description,
+                    children: updatedChildren
+                ))
+            }
+        }
+        
+        return updatedTree
+    }
+
     /// Opens an application by bundle identifier
     private func openApplication(bundleIdentifier: String) async throws {
         let workspace = NSWorkspace.shared
@@ -254,5 +292,31 @@ actor StateManager {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         return result == .success ? value : nil
+    }
+
+    /// Clicks a UI element by its ID using direct AXUIElement reference
+    func clickElementById(applicationIdentifier: String, elementId: String) async throws {
+        os_log("Clicking element %@ for %@", log: log, type: .debug, elementId, applicationIdentifier)
+
+        guard AXIsProcessTrusted() else {
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        guard let axElement = elementRegistry[elementId] else {
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
+        }
+        
+        // Perform click action directly on AXUIElement
+        let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+        if result != .success {
+            throw NudgeError.invalidRequest(message: "Failed to click element with ID '\(elementId)'")
+        }
+        
+        os_log("Successfully clicked element %@", log: log, type: .info, elementId)
+    }
+
+    /// Checks if an element exists in the registry (for testing)
+    func elementExists(elementId: String) -> Bool {
+        return elementRegistry[elementId] != nil
     }
 } 

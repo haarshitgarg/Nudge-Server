@@ -13,6 +13,11 @@ fileprivate struct ClickElementByIdArguments: Decodable {
     let element_id: String
 }
 
+fileprivate struct UpdateUIElementTreeArguments: Decodable {
+    let bundle_identifier: String
+    let element_id: String
+}
+
 struct NavServer: Service {
     private let server: Server
     private let transport: Transport
@@ -32,7 +37,7 @@ struct NavServer: Service {
         let tools: [Tool] = [
             Tool(
                 name: "get_ui_elements",
-                description: "Get all UI elements for an application in a tree structure. Automatically opens the application if not running, fills ui_state_tree with focused window, menu bar, and all elements. Returns tree with only 3 fields: element_id, description, children.",
+                description: "Get all UI elements for an application in a tree structure. Automatically opens the application if not running, fills ui_state_tree with focused window, menu bar, and all elements. Returns tree with only 3 fields: element_id, description, children. Use this function to get information about the state of the application",
                 inputSchema: .object([
                     "type": "object",
                     "properties": .object([
@@ -58,6 +63,25 @@ struct NavServer: Service {
                         "element_id": .object([
                             "type": "string",
                             "description": "Element ID obtained from get_ui_elements"
+                        ])
+                    ]),
+                    "required": .array(["bundle_identifier", "element_id"])
+                ])
+            ),
+            
+            Tool(
+                name: "update_ui_element_tree",
+                description: "Update and return the UI element tree for a specific element by its ID. Call this function if you need more information about the children of a particular ui element. For example if from the available ui element id you feel like the final element must be under a certain element, call this function to get the updated tree.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "bundle_identifier": .object([
+                            "type": "string",
+                            "description": "Bundle identifier of application"
+                        ]),
+                        "element_id": .object([
+                            "type": "string",
+                            "description": "Element ID to update and return tree from (obtained from get_ui_elements)"
                         ])
                     ]),
                     "required": .array(["bundle_identifier", "element_id"])
@@ -125,6 +149,35 @@ struct NavServer: Service {
                     return CallTool.Result(content: [.text("Successfully clicked element '\(args.element_id)'. UI has been updated - you can call get_ui_elements again to see the new state.")], isError: false)
                 } catch {
                     logger.error("Error in click_element_by_id: \(error.localizedDescription)")
+                    return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)
+                }
+
+            case "update_ui_element_tree":
+                logger.info("Updating UI element tree")
+                guard let arguments = params.arguments else {
+                    logger.error("Missing arguments for update_ui_element_tree")
+                    return CallTool.Result(content: [.text("Missing arguments")], isError: true)
+                }
+
+                do {
+                    let data = try JSONEncoder().encode(arguments)
+                    let args = try JSONDecoder().decode(UpdateUIElementTreeArguments.self, from: data)
+                    
+                    logger.info("Updating tree for element \(args.element_id) in \(args.bundle_identifier)")
+                    let updatedTree = try await StateManager.shared.updateUIElementTree(
+                        applicationIdentifier: args.bundle_identifier,
+                        elementId: args.element_id
+                    )
+                    
+                    let updatedTreeData = try jsonencoder.encode(updatedTree)
+                    guard let updatedTreeString = String(data: updatedTreeData, encoding: .utf8) else {
+                        throw NudgeError.invalidRequest(message: "Failed to encode updated UI element tree")
+                    }
+                    
+                    logger.info("Successfully updated UI element tree for \(args.element_id)")
+                    return CallTool.Result(content: [.text(updatedTreeString)], isError: false)
+                } catch {
+                    logger.error("Error in update_ui_element_tree: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)
                 }
 

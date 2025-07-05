@@ -13,9 +13,10 @@ The Nudge Server has been completely refactored from a complex multi-tool archit
 - **Complex data structure**: 9+ fields per element
 
 ### After: Simplified Tree-Based Architecture  
-- **2 tools**: `get_ui_elements`, `click_element_by_id`
-- **Simple workflow**: 1-2 calls for any task
+- **3 tools**: `get_ui_elements`, `click_element_by_id`, `update_ui_element_tree`
+- **Simple workflow**: 1-3 calls for any task
 - **Automatic scanning**: Focused window + menu bar automatically
+- **Partial updates**: Efficient updates for specific UI elements
 - **Simple data structure**: 3 fields only: `element_id`, `description`, `children`
 
 ## Data Structure Simplification
@@ -120,9 +121,10 @@ struct UIElementInfo {
 4. `click_element_by_id`
 5. `get_element_children`
 
-**After** (2 tools):
+**After** (3 tools):
 1. `get_ui_elements` - Auto-opens, tree structure
 2. `click_element_by_id` - Direct AXUIElement
+3. `update_ui_element_tree` - Partial tree updates
 
 ### API Simplification
 
@@ -135,6 +137,11 @@ struct UIElementInfo {
 - **Before**: Complex navigation logic
 - **After**: Direct AXUIElement reference
 - **Benefit**: Maximum performance, no path traversal
+
+**update_ui_element_tree** (NEW):
+- **Purpose**: Update and return tree for specific UI element
+- **Benefit**: Efficient partial updates without full application rescan
+- **Use cases**: Dynamic content changes, expanding tree views, loading new content
 
 ## Test Updates
 
