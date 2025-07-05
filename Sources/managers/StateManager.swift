@@ -568,6 +568,8 @@ actor StateManager {
         if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
             os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
             try await openApplication(bundleIdentifier: applicationIdentifier)
+            // Give the application time to fully start
+            try await Task.sleep(for: .seconds(3))
         }
         
         // If expanding a specific element, handle that separately
@@ -580,12 +582,109 @@ actor StateManager {
             return try await getUIElementsInFrame(applicationIdentifier: applicationIdentifier, frame: targetFrame.cgRect)
         }
         
-        // Otherwise, get full UI state tree with deep scanning
-        try await updateUIStateTreeDeep(applicationIdentifier: applicationIdentifier)
-        let stateTree = try getUIStateTree(applicationIdentifier: applicationIdentifier)
+        // Otherwise, get full screen elements with deep scanning
+        // Use a full screen frame to get all elements
+        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let fullScreenFrame = CGRect(x: 0, y: 0, width: screenFrame.width, height: screenFrame.height)
         
-        // Return flattened actionable elements
-        return flattenElements(stateTree.treeData).filter { $0.isActionable }
+        // Use the working getUIElementsInFrame method but with deeper scanning
+        return try await getUIElementsInFrameDeep(applicationIdentifier: applicationIdentifier, frame: fullScreenFrame, maxDepth: 5)
+    }
+    
+    /// Enhanced version of getUIElementsInFrame with configurable depth
+    private func getUIElementsInFrameDeep(applicationIdentifier: String, frame: CGRect, maxDepth: Int = 5) async throws -> [UIElementInfo] {
+        os_log("Getting UI elements in frame with deep scanning (depth: %d) for %@", log: log, type: .debug, maxDepth, applicationIdentifier)
+
+        guard AXIsProcessTrusted() else {
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
+            throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
+        }
+
+        // Clear existing elements for this application
+        elementRegistry = elementRegistry.filter { $0.value.applicationIdentifier != applicationIdentifier }
+
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var relevantElements: [UIElementInfo] = []
+
+        // Get focused window first
+        var focusedWindowValue: CFTypeRef?
+        let focusedWindowResult = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowValue)
+
+        if focusedWindowResult == .success {
+            let focusedWindow = focusedWindowValue as! AXUIElement
+            let windowElements = await collectElementsInFrameDeep(from: focusedWindow, targetFrame: frame, currentDepth: 0, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier)
+            relevantElements.append(contentsOf: windowElements)
+        } else {
+            // Fallback to all windows
+            var allWindowsValue: CFTypeRef?
+            let allWindowsResult = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &allWindowsValue)
+
+            if allWindowsResult == .success {
+                let allWindows = allWindowsValue as! [AXUIElement]
+                for window in allWindows {
+                    let windowElements = await collectElementsInFrameDeep(from: window, targetFrame: frame, currentDepth: 0, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier)
+                    relevantElements.append(contentsOf: windowElements)
+                }
+            }
+        }
+
+        // Also get menu bar elements with deep scanning
+        var menuBarValue: CFTypeRef?
+        let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
+        if menuBarResult == .success {
+            let menuBar = menuBarValue as! AXUIElement
+            let menuElements = await collectElementsInFrameDeep(from: menuBar, targetFrame: frame, currentDepth: 0, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier)
+            relevantElements.append(contentsOf: menuElements)
+        }
+
+        // Filter to only actionable elements
+        let actionableElements = relevantElements.filter { $0.isActionable }
+        
+        os_log("Deep scanning found %d total elements, %d actionable for %@", log: log, type: .info, relevantElements.count, actionableElements.count, applicationIdentifier)
+        return actionableElements
+    }
+    
+    /// Enhanced version of collectElementsInFrame with configurable depth
+    private func collectElementsInFrameDeep(from element: AXUIElement, targetFrame: CGRect, currentDepth: Int, maxDepth: Int, applicationIdentifier: String) async -> [UIElementInfo] {
+        var collectedElements: [UIElementInfo] = []
+
+        // Get the frame of the current element
+        var elementFrame: CGRect?
+        if let positionValue = getAttribute(element, kAXPositionAttribute),
+           let sizeValue = getAttribute(element, kAXSizeAttribute) {
+            var position: CGPoint = .zero
+            var size: CGSize = .zero
+            if AXValueGetValue(positionValue as! AXValue, .cgPoint, &position) && AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) {
+                elementFrame = CGRect(origin: position, size: size)
+            }
+        }
+
+        // For deep scanning, we want to include elements even if they don't have frames or intersect
+        // This ensures we get menu items and other elements that might not have traditional frames
+        let shouldInclude = elementFrame == nil || elementFrame!.intersects(targetFrame) || currentDepth <= 2
+        
+        if shouldInclude {
+            // Build the UI element info for this element
+            let elementInfos = await buildUIElementInfo(for: element, currentDepth: currentDepth, maxDepth: 0, applicationIdentifier: applicationIdentifier, parentPath: [])
+            collectedElements.append(contentsOf: elementInfos)
+        }
+
+        // Always recurse for deep scanning, regardless of frame intersection
+        if currentDepth < maxDepth {
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+            if result == .success, let axChildren = value as? [AXUIElement] {
+                for child in axChildren {
+                    let childElements = await collectElementsInFrameDeep(from: child, targetFrame: targetFrame, currentDepth: currentDepth + 1, maxDepth: maxDepth, applicationIdentifier: applicationIdentifier)
+                    collectedElements.append(contentsOf: childElements)
+                }
+            }
+        }
+
+        return collectedElements
     }
     
     /// Gets children of a specific element for progressive disclosure
