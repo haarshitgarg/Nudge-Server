@@ -146,7 +146,7 @@ struct NavServer: Service {
                     )
                     
                     logger.info("Successfully clicked element \(args.element_id)")
-                    return CallTool.Result(content: [.text("Successfully clicked element '\(args.element_id)'. UI has been updated - you can call get_ui_elements again to see the new state.")], isError: false)
+                    return CallTool.Result(content: [.text("Successfully clicked element '\(args.element_id)'. UI has been updated.")], isError: false)
                 } catch {
                     logger.error("Error in click_element_by_id: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)

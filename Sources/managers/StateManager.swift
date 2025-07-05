@@ -22,19 +22,19 @@ actor StateManager {
     func getUIElements(applicationIdentifier: String) async throws -> [UIElementInfo] {
         os_log("Getting UI elements for %@", log: log, type: .debug, applicationIdentifier)
         
-        // Check if application is running, if not open it
+        // Check if application is running, if not open it and wait for it to be fully registered
         if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
             os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
             try await openApplication(bundleIdentifier: applicationIdentifier)
-            // Give the application time to fully start
-            try await Task.sleep(for: .seconds(3))
+            // Wait for the application to be fully registered in the system
+            try await waitForApplication(bundleIdentifier: applicationIdentifier)
         }
         
         // Bring application to front/focus
         try await focusApplication(bundleIdentifier: applicationIdentifier)
         
         // Fill the UI state tree with focused window, menu bar, and elements (limited depth)
-        try await fillUIStateTree(applicationIdentifier: applicationIdentifier, maxDepth: 3)
+        try await fillUIStateTree(applicationIdentifier: applicationIdentifier, maxDepth: 2)
         
         // Return the tree structure
         return uiStateTrees[applicationIdentifier]?.treeData ?? []
@@ -48,7 +48,9 @@ actor StateManager {
             throw NudgeError.accessibilityPermissionDenied
         }
 
+        // App is guaranteed to be running by this point (checked in getUIElements)
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
+            os_log("Application %@ not found in running applications during tree fill", log: log, type: .error, applicationIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
@@ -85,8 +87,8 @@ actor StateManager {
     /// Recursively builds UI element tree with only 3 fields: element_id, description, children
     /// Flattens container elements by returning their children directly
     private func buildUIElementTree(for element: AXUIElement, applicationIdentifier: String, maxDepth: Int = Int.max, currentDepth: Int = 0) async -> [UIElementInfo] {
-        // Check if we've reached the maximum depth
-        if currentDepth >= maxDepth {
+        // Check if we've exceeded the maximum depth
+        if currentDepth > maxDepth {
             return []
         }
         
@@ -289,9 +291,38 @@ actor StateManager {
         }
     }
     
+    /// Waits for an application to be fully registered in the system after opening
+    private func waitForApplication(bundleIdentifier: String) async throws {
+        let maxRetries = 10
+        var retryCount = 0
+        var delay: TimeInterval = 0.5
+        
+        while retryCount < maxRetries {
+            // Check if application is now running
+            if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) {
+                os_log("Application %@ is now running after %d retries", log: log, type: .info, bundleIdentifier, retryCount)
+                return
+            }
+            
+            os_log("Waiting for application %@ to be registered (retry %d/%d)", log: log, type: .debug, bundleIdentifier, retryCount + 1, maxRetries)
+            
+            // Wait before retrying
+            try await Task.sleep(for: .seconds(delay))
+            
+            // Exponential backoff with a maximum delay
+            delay = min(delay * 1.5, 3.0)
+            retryCount += 1
+        }
+        
+        // If we get here, the app didn't start within our timeout
+        throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
+    }
+    
     /// Brings an application to the front/focus
     private func focusApplication(bundleIdentifier: String) async throws {
+        // App is guaranteed to be running by this point (checked in getUIElements)
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) else {
+            os_log("Application %@ not found in running applications during focus", log: log, type: .error, bundleIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
         }
         
