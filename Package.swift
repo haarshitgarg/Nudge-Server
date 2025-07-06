@@ -13,17 +13,25 @@ let package = Package(
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.8.0")
     ],
     targets: [
+        .target(
+            name: "NudgeLibrary",
+            dependencies: [
+                .product(name: "MCP", package: "swift-sdk")
+            ],
+            path: "Sources/NudgeLibrary"
+        ),
         .executableTarget(
             name: "NudgeServer",
             dependencies: [
                 .product(name: "MCP", package: "swift-sdk"),
-                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle")
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                "NudgeLibrary"
             ],
-            path: "Sources",
+            path: "Sources/NudgeServer",
         ),
         .testTarget(
             name: "NudgeTests",
-            dependencies: ["NudgeServer"],
+            dependencies: ["NudgeLibrary"],
             path: "Tests/NudgeServerTests"
         )
     ]

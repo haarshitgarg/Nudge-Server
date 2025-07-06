@@ -3,6 +3,7 @@ import MCP
 import Foundation
 import ServiceLifecycle
 import AppKit
+import NudgeLibrary
 
 fileprivate struct GetUIElementsArguments: Decodable {
     let bundle_identifier: String

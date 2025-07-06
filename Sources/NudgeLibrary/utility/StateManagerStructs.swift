@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents the UI state tree for a specific application.
-struct UIStateTree: Codable, Sendable {
+public struct UIStateTree: Codable, Sendable {
     let applicationIdentifier: String // e.g., bundle identifier
     var treeData: [UIElementInfo] // Placeholder for the actual UI tree data (e.g., JSON, XML)
     var isStale: Bool = false // Indicates if the UI tree needs to be updated
@@ -9,7 +9,7 @@ struct UIStateTree: Codable, Sendable {
 }
 
 /// Simplified UI element structure with only essential fields
-struct UIElementInfo: Codable, Sendable {
+public struct UIElementInfo: Codable, Sendable {
     let element_id: String
     let description: String
     let children: [UIElementInfo]

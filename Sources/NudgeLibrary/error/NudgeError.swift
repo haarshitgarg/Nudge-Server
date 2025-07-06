@@ -1,6 +1,6 @@
 import Foundation
 
-enum NudgeError: LocalizedError {
+public enum NudgeError: LocalizedError {
     // MARK: - Application Errors
     case applicationNotFound(bundleIdentifier: String)
     case applicationNotRunning(bundleIdentifier: String)
@@ -35,7 +35,7 @@ enum NudgeError: LocalizedError {
     case unexpectedError(message: String, underlyingError: Error?)
     case notImplemented(feature: String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .applicationNotFound(let bundleIdentifier):
             return "Application with bundle identifier '\(bundleIdentifier)' was not found."
