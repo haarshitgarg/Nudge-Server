@@ -8,6 +8,10 @@ let package = Package(
     platforms: [
         .macOS(.v14)
     ],
+    products: [
+        .library(name: "NudgeLibrary", targets: ["NudgeLibrary"]),
+        .executable(name: "NudgeServer", targets: ["NudgeServer"])
+    ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.9.0"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.8.0")
