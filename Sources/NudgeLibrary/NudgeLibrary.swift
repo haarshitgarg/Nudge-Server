@@ -1,9 +1,14 @@
 import Foundation
+import MCP
 
 @MainActor
 public class NudgeLibrary {
     static public let shared: NudgeLibrary = NudgeLibrary()
     private init() {}
+
+    public func getNavTools() -> [Tool] {
+        return NavServerTools.getAllTools()
+    }
 
     public func getUIElements(bundleIdentifier: String) async throws -> [UIElementInfo] {
         return try await StateManager.shared.getUIElements(applicationIdentifier: bundleIdentifier)
