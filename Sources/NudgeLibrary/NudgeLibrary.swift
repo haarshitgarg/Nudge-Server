@@ -1,8 +1,7 @@
 import Foundation
 import MCP
 
-@MainActor
-public class NudgeLibrary {
+public actor NudgeLibrary {
     static public let shared: NudgeLibrary = NudgeLibrary()
     private init() {}
 
