@@ -3,8 +3,8 @@ import Foundation
 import AppKit
 import CoreGraphics
 
-actor StateManager {
-    static let shared = StateManager()
+public actor StateManager {
+    static public let shared = StateManager()
     private init() {}
 
     let log = OSLog(subsystem: "Harshit.NudgeServer", category: "StateManager")
@@ -19,7 +19,7 @@ actor StateManager {
     private var elementRegistry: [String: AXUIElement] = [:]
 
     /// Main method to get UI elements - checks if app is open, opens if not, fills tree structure
-    func getUIElements(applicationIdentifier: String) async throws -> [UIElementInfo] {
+    public func getUIElements(applicationIdentifier: String) async throws -> [UIElementInfo] {
         os_log("Getting UI elements for %@", log: log, type: .debug, applicationIdentifier)
         
         // Check if application is running, if not open it and wait for it to be fully registered
@@ -219,7 +219,7 @@ actor StateManager {
     
     /// Updates and returns the UI element tree for a specific element by its ID
     /// This allows for efficient partial tree updates without rescanning the entire application
-    func updateUIElementTree(applicationIdentifier: String, elementId: String) async throws -> [UIElementInfo] {
+    public func updateUIElementTree(applicationIdentifier: String, elementId: String) async throws -> [UIElementInfo] {
         os_log("Updating UI element tree for element %@ in %@", log: log, type: .debug, elementId, applicationIdentifier)
 
         guard AXIsProcessTrusted() else {
@@ -362,7 +362,7 @@ actor StateManager {
     }
 
     /// Clicks a UI element by its ID using direct AXUIElement reference
-    func clickElementById(applicationIdentifier: String, elementId: String) async throws {
+    public func clickElementById(applicationIdentifier: String, elementId: String) async throws {
         os_log("Clicking element %{public}@ for %{public}@", log: log, type: .debug, elementId, applicationIdentifier)
 
         guard AXIsProcessTrusted() else {

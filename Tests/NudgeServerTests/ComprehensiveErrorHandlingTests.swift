@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import NudgeServer
+@testable import NudgeLibrary
 
 final class ComprehensiveErrorHandlingTests: XCTestCase {
     

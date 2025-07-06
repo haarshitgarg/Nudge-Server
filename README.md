@@ -1,10 +1,10 @@
-# Nudge Navigation Server
+# Nudge Navigation Server & Library
 
-A Swift-based Model Context Protocol (MCP) server that provides advanced tools for macOS UI automation and application interaction. This server enables AI agents to interact with macOS applications through accessibility APIs using a sophisticated element-based approach with UI tree management.
+A Swift-based toolkit for macOS UI automation that provides both:
+1. **MCP Server** - Model Context Protocol server for AI agents
+2. **Swift Library** - Direct library for embedding in your applications
 
-## What is MCP?
-
-The Model Context Protocol (MCP) is an open standard that enables AI assistants to securely connect to external data sources and tools. This server implements MCP to provide comprehensive macOS UI automation capabilities to AI agents.
+Enables interaction with macOS applications through accessibility APIs using a sophisticated element-based approach with UI tree management.
 
 ## Requirements
 
@@ -51,20 +51,46 @@ Updates and returns the UI element tree for a specific element by its ID. Call t
 
 ## Setup and Installation
 
-### 1. Build the project
+### As MCP Server
+
+#### 1. Build the project
 ```bash
 swift build
 ```
 
-### 2. Run the server
+#### 2. Run the server
 ```bash
 swift run NudgeServer
 ```
 
-### 3. Run tests
+#### 3. Run tests
 ```bash
 swift test
 ```
+
+### As Swift Library
+
+#### 1. Add to Package.swift
+```swift
+dependencies: [
+    .package(url: "https://github.com/haarshitgarg/Nudge-Server.git", from: "1.0.0")
+]
+
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "NudgeLibrary", package: "Nudge-Server")
+        ]
+    )
+]
+```
+
+#### 2. Add to Xcode Project
+1. **File** → **Add Package Dependencies...**
+2. Enter: `https://github.com/haarshitgarg/Nudge-Server.git`
+3. Select **NudgeLibrary** product
+4. Add to your target
 
 ## Accessibility Permissions
 
@@ -125,7 +151,107 @@ Nudge-Server/
 - **Performance Tests**: Ensures operations complete within reasonable time limits
 - **Multi-Application Tests**: Tests interaction with multiple applications simultaneously
 
-## Usage with MCP Clients
+## Usage Examples
+
+### Library Usage (Direct Swift Integration)
+
+#### Basic Example
+```swift
+import NudgeLibrary
+
+class MyAutomator {
+    private let nudge = NudgeLibrary.shared
+    
+    func automateApplication() async throws {
+        // Get UI elements for Safari
+        let elements = try await nudge.getUIElements(for: "com.apple.Safari")
+        print("Found \(elements.count) elements")
+        
+        // Find and click a button
+        if let searchButton = elements.first(where: { $0.description.contains("Search") }) {
+            try await nudge.clickElement(
+                bundleIdentifier: "com.apple.Safari",
+                elementId: searchButton.element_id
+            )
+            print("Clicked search button")
+        }
+        
+        // Update tree after interaction
+        if let firstElement = elements.first {
+            let updatedTree = try await nudge.updateUIElementTree(
+                bundleIdentifier: "com.apple.Safari",
+                elementId: firstElement.element_id
+            )
+            print("Updated tree has \(updatedTree.count) elements")
+        }
+    }
+}
+```
+
+#### SwiftUI Example
+```swift
+import SwiftUI
+import NudgeLibrary
+
+struct ContentView: View {
+    @State private var elements: [UIElementInfo] = []
+    @State private var isLoading = false
+    
+    var body: some View {
+        VStack {
+            Button("Get Safari Elements") {
+                Task { await loadElements() }
+            }
+            .disabled(isLoading)
+            
+            List(elements, id: \.element_id) { element in
+                Button(element.description) {
+                    Task { await clickElement(element) }
+                }
+            }
+        }
+    }
+    
+    func loadElements() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            elements = try await NudgeLibrary.shared.getUIElements(for: "com.apple.Safari")
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+    
+    func clickElement(_ element: UIElementInfo) async {
+        do {
+            try await NudgeLibrary.shared.clickElement(
+                bundleIdentifier: "com.apple.Safari",
+                elementId: element.element_id
+            )
+        } catch {
+            print("Click error: \(error)")
+        }
+    }
+}
+```
+
+#### Getting Available Tools
+```swift
+import NudgeLibrary
+
+func listTools() async throws {
+    let (tools, nextCursor) = try await NudgeLibrary.shared.getNavTools()
+    
+    for tool in tools {
+        print("Tool: \(tool.name)")
+        print("Description: \(tool.description)")
+        print("---")
+    }
+}
+```
+
+### MCP Server Usage
 
 This server runs in stdio mode and can be integrated with MCP-compatible clients. The server will:
 
@@ -134,9 +260,7 @@ This server runs in stdio mode and can be integrated with MCP-compatible clients
 3. Return results via stdout
 4. Handle errors gracefully with appropriate error messages
 
-## Example Workflows
-
-### Basic Application Interaction
+#### Basic MCP Workflow
 1. Use `get_ui_elements` to discover UI elements and get their IDs
 2. Use `click_element_by_id` to interact with specific elements
 3. Use `update_ui_element_tree` to explore deeper into specific UI areas
@@ -156,22 +280,31 @@ Tested with:
 - **Safari**: Web browsing and navigation
 - **And many more macOS applications**
 
-## Development
+## Library vs MCP Server
 
-This project uses:
-- **Swift Package Manager** for dependency management
-- **MCP Swift SDK** (v0.9.0+) for protocol implementation
-- **Swift Service Lifecycle** (v2.8.0+) for server management
-- **AppKit** for macOS integration
-- **XCTest** for comprehensive testing
+| Feature | Library | MCP Server |
+|---------|---------|------------|
+| **Performance** | Direct function calls | JSON serialization overhead |
+| **Integration** | Swift Package Manager / Xcode | MCP protocol clients |
+| **Type Safety** | Native Swift types | String-based JSON |
+| **Use Case** | Embed in Swift apps | AI agent integration |
+| **Dependencies** | Minimal (just MCP for tools) | Full MCP + Service Lifecycle |
 
-### Dependencies
-```swift
-dependencies: [
-    .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.9.0"),
-    .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.8.0")
-]
-```
+## When to Use Which Approach
+
+### Use the Library (NudgeLibrary) when:
+- Building native Swift/macOS applications
+- Need maximum performance for UI automation
+- Want type safety and direct debugging
+- Integrating into existing Swift projects
+- Building custom automation tools
+
+### Use the MCP Server when:
+- Working with AI agents (Claude, GPT, etc.)
+- Need language-agnostic integration
+- Want to expose tools to external systems
+- Building distributed automation systems
+- Using MCP-compatible clients
 
 ## Error Handling
 
