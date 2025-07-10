@@ -116,8 +116,7 @@ public actor StateManager {
             "AXDrawer",          // Drawer containers - flatten to show drawer content
             "AXPane",            // Pane containers - flatten to show pane content
             "AXSplitLayoutArea", // Split layout containers - flatten to show layout content
-            "AXRow",             // Row element
-            "AXColumn"              // Row element
+            "AXCell"
         ]
         
         // Check if this element should be flattened
@@ -192,7 +191,7 @@ public actor StateManager {
         }
         
         // Special handling for AXCell elements - extract information from children
-        if let role = role, role == "AXCell" {
+        if let role = role, role == "AXRow" || role == "AXColumn" {
             let childrenInfo = extractChildrenInfo(from: element)
             if !childrenInfo.isEmpty {
                 descriptionParts.append(contentsOf: childrenInfo)
@@ -213,7 +212,7 @@ public actor StateManager {
         return descriptionParts.joined(separator: ", ")
     }
     
-    /// Extracts useful information from children elements (used for AXCell)
+    /// Extracts useful information from children elements (used for AXCell, AXRow, AXColumn)
     private func extractChildrenInfo(from element: AXUIElement) -> [String] {
         var childrenInfo: [String] = []
         
@@ -237,6 +236,12 @@ public actor StateManager {
                         if let text = getAttribute(child, kAXValueAttribute) as? String, !text.isEmpty {
                             childrenInfo.append(text)
                         }
+                    }
+                    
+                    // Special handling for AXCell children - extract info from their children (grandchildren)
+                    if childRole == "AXCell" {
+                        let grandchildrenInfo = extractChildrenInfo(from: child)
+                        childrenInfo.append(contentsOf: grandchildrenInfo)
                     }
                 }
             }
