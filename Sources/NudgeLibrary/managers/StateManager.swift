@@ -115,7 +115,9 @@ public actor StateManager {
             "AXDockItem",        // Dock items - flatten to show dock content
             "AXDrawer",          // Drawer containers - flatten to show drawer content
             "AXPane",            // Pane containers - flatten to show pane content
-            "AXSplitLayoutArea"  // Split layout containers - flatten to show layout content
+            "AXSplitLayoutArea", // Split layout containers - flatten to show layout content
+            "AXRow",             // Row element
+            "AXColumn"              // Row element
         ]
         
         // Check if this element should be flattened
@@ -189,6 +191,14 @@ public actor StateManager {
             descriptionParts.append(value)
         }
         
+        // Special handling for AXCell elements - extract information from children
+        if let role = role, role == "AXCell" {
+            let childrenInfo = extractChildrenInfo(from: element)
+            if !childrenInfo.isEmpty {
+                descriptionParts.append(contentsOf: childrenInfo)
+            }
+        }
+        
         if let role = role {
             let cleanRole = role.replacingOccurrences(of: "AX", with: "")
             descriptionParts.append("(\(cleanRole))")
@@ -200,7 +210,40 @@ public actor StateManager {
             descriptionParts.append("- \(description)")
         }
         
-        return descriptionParts.joined(separator: " ")
+        return descriptionParts.joined(separator: ", ")
+    }
+    
+    /// Extracts useful information from children elements (used for AXCell)
+    private func extractChildrenInfo(from element: AXUIElement) -> [String] {
+        var childrenInfo: [String] = []
+        
+        var childrenValue: CFTypeRef?
+        let childrenResult = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+        
+        if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
+            for child in axChildren {
+                // Get text content from child elements
+                if let childTitle = getAttribute(child, kAXTitleAttribute) as? String, !childTitle.isEmpty {
+                    childrenInfo.append(childTitle)
+                }
+                
+                if let childValue = getAttribute(child, kAXValueAttribute) as? String, !childValue.isEmpty {
+                    childrenInfo.append(childValue)
+                }
+                
+                // For text fields and static text, get the value
+                if let childRole = getAttribute(child, kAXRoleAttribute) as? String {
+                    if childRole == "AXStaticText" || childRole == "AXTextField" {
+                        if let text = getAttribute(child, kAXValueAttribute) as? String, !text.isEmpty {
+                            childrenInfo.append(text)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates and empty strings
+        return Array(Set(childrenInfo)).filter { !$0.isEmpty }
     }
     
     /// Checks if an element is actionable
