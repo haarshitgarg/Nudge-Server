@@ -548,6 +548,62 @@ final class ComprehensiveStateManagerTests: XCTestCase {
     }
     
     /**
+     * Tests System Preferences opening and UI element retrieval performance.
+     * Expected behavior: Should open System Preferences and retrieve UI elements within 15 seconds.
+     * System Preferences typically takes longer to open than simple apps like Calculator.
+     */
+    func testSystemPreferencesPerformance() async throws {
+        let systemPreferencesIdentifier = "com.apple.systempreferences"
+        
+        let startTime = Date()
+        let elements = try await stateManager.getUIElements(applicationIdentifier: systemPreferencesIdentifier)
+        let endTime = Date()
+        let duration = endTime.timeIntervalSince(startTime)
+        
+        // System Preferences can take longer to open and populate
+        XCTAssertLessThan(duration, 15.0, "System Preferences should open and populate UI elements within 15 seconds")
+        XCTAssertGreaterThan(elements.count, 0, "Should return UI elements for System Preferences")
+        
+        // Test AXCell description enhancement
+        let allElements = getAllElementsRecursively(from: elements)
+        let cellElements = allElements.filter { element in
+            element.description.contains("(Cell)")
+        }
+        
+        if !cellElements.isEmpty {
+            for cellElement in cellElements {
+                XCTAssertFalse(cellElement.description.isEmpty, "Cell elements should have meaningful descriptions")
+                // Verify enhanced cell descriptions contain useful information
+                let hasEnhancedInfo = cellElement.description.count > 6 // More than just "(Cell)"
+                if hasEnhancedInfo {
+                    print("Enhanced cell description: \(cellElement.description)")
+                }
+            }
+        }
+        
+        // Test clicking performance on System Preferences elements
+        let clickableElements = allElements.filter { element in
+            element.description.contains("(Button)") ||
+            element.description.contains("(Cell)") ||
+            element.description.contains("(Tab)")
+        }
+        
+        if let firstClickable = clickableElements.first {
+            let clickStartTime = Date()
+            try await stateManager.clickElementById(
+                applicationIdentifier: systemPreferencesIdentifier,
+                elementId: firstClickable.element_id
+            )
+            let clickEndTime = Date()
+            let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
+            
+            XCTAssertLessThan(clickDuration, 2.0, "Clicking System Preferences elements should complete within 2 seconds")
+        }
+        
+        print("System Preferences performance test completed: \(String(format: "%.2f", duration))s opening, \(allElements.count) total elements, \(clickableElements.count) clickable elements")
+    }
+
+    /**
      * Tests performance of all operations.
      * Expected behavior: All operations should complete within reasonable time limits.
      */
