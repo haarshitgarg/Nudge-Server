@@ -87,13 +87,19 @@ struct NavServer: Service {
                     
                     logger.info("Direct click for element \(args.element_id) in \(args.bundle_identifier)")
 
-                    try await StateManager.shared.clickElementById(
+                    let response = try await StateManager.shared.clickElementById(
                         applicationIdentifier: args.bundle_identifier,
                         elementId: args.element_id
                     )
+                    let elements = response.uiTree
+
+                    let elementsData = try jsonencoder.encode(elements)
+                    guard let elementsString = String(data: elementsData, encoding: .utf8) else {
+                        throw NudgeError.invalidRequest(message: "Failed to encode UI elements")
+                    }
                     
-                    logger.info("Successfully clicked element \(args.element_id)")
-                    return CallTool.Result(content: [.text("Successfully clicked element '\(args.element_id)'. UI has been updated.")], isError: false)
+                    logger.info("\(response.message)")
+                    return CallTool.Result(content: [.text("\(response.message)\n New ui tree for element:\n \(elementsString)")], isError: false)
                 } catch {
                     logger.error("Error in click_element_by_id: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)
