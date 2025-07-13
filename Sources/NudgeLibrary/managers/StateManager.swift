@@ -441,7 +441,7 @@ public actor StateManager {
             }
         }
         
-        os_log("Performing double-click at position (%f, %f)", log: log, type: .info, point.x, point.y)
+        os_log("Performing double-click at position (%f, %f)", log: log, type: .debug, point.x, point.y)
         
         // Create double-click events
         guard let mouseDown1 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
@@ -468,13 +468,13 @@ public actor StateManager {
         // Allow time for action to take effect
         try await Task.sleep(for: .milliseconds(200))
         
-        os_log("Double-click fallback completed", log: log, type: .info)
+        os_log("Double-click completed", log: log, type: .debug)
         return true
     }
 
     /// Clicks a UI element by its ID using direct AXUIElement reference
     public func clickElementById(applicationIdentifier: String, elementId: String) async throws -> click_response {
-        os_log("Clicking element %{public}@ for %{public}@", log: log, type: .debug, elementId, applicationIdentifier)
+        os_log("Clicking element %{public}@", log: log, type: .debug, elementId)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
@@ -487,82 +487,48 @@ public actor StateManager {
         // Ensure the application is focused before performing any actions
         try await focusApplication(bundleIdentifier: applicationIdentifier)
 
-        let elementType = getAttribute(axElement, kAXRoleAttribute) as? String
         let elementSubrole = getAttribute(axElement, kAXSubroleAttribute) as? String
-        os_log("Element type: %{public}@, subrole: %{public}@", log: log, type: .debug, elementType ?? "Unknown", elementSubrole ?? "None")
         
-        // For AXOutlineRow elements, try double-click first (most likely to actually open projects)
+        // For AXOutlineRow elements (like Xcode project list), use double-click to open
         if elementSubrole == "AXOutlineRow" {
-            os_log("Detected AXOutlineRow - trying double-click first for project opening", log: log, type: .info)
+            os_log("AXOutlineRow detected - attempting double-click to open project", log: log, type: .info)
             
+            // Try double-click first (this actually opens projects)
             do {
                 let doubleClickSuccess = try await performDoubleClickFallback(element: axElement)
                 if doubleClickSuccess {
-                    os_log("Double-click succeeded for AXOutlineRow element %{public}@", log: log, type: .info, elementId)
                     let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully clicked the element using double-click", uiTree: uitree)
+                    return click_response(message: "Successfully opened project", uiTree: uitree)
                 }
             } catch {
-                os_log("Double-click failed for AXOutlineRow, trying accessibility actions: %{public}@", log: log, type: .info, error.localizedDescription)
+                os_log("Double-click failed: %{public}@", log: log, type: .error, error.localizedDescription)
             }
             
-            // Try accessibility actions that might fail but at least give meaningful errors
-            let functionalActions = ["AXConfirm", "AXPick", "AXPress"]
-            
-            for action in functionalActions {
-                os_log("Attempting %{public}@ action on focused AXOutlineRow %{public}@", log: log, type: .debug, action, elementId)
-                let result = AXUIElementPerformAction(axElement, action as CFString)
-                
-                if result == .success {
-                    os_log("Successfully performed %{public}@ action on AXOutlineRow %{public}@", log: log, type: .info, action, elementId)
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully clicked the element using \(action)", uiTree: uitree)
-                } else {
-                    os_log("Action %{public}@ failed with error %d", log: log, type: .debug, action, result.rawValue)
-                }
+            // Fallback to selection (better than complete failure)
+            let result = AXUIElementPerformAction(axElement, "AXShowDefaultUI" as CFString)
+            if result == .success {
+                let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                return click_response(message: "Project selected (not opened - double-click failed)", uiTree: uitree)
             }
             
-            // Last resort: UI actions that "work" but don't actually open anything
-            os_log("Trying UI actions as last resort (these may not actually open the project)", log: log, type: .info)
-            let uiActions = ["AXShowAlternateUI", "AXShowDefaultUI"]
-            
-            for action in uiActions {
-                os_log("Attempting %{public}@ action on focused AXOutlineRow %{public}@", log: log, type: .debug, action, elementId)
-                let result = AXUIElementPerformAction(axElement, action as CFString)
-                
-                if result == .success {
-                    os_log("Successfully performed %{public}@ action (but may not have opened project) on AXOutlineRow %{public}@", log: log, type: .info, action, elementId)
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully clicked the element using \(action) (selection only)", uiTree: uitree)
-                } else {
-                    os_log("Action %{public}@ failed with error %d", log: log, type: .debug, action, result.rawValue)
-                }
-            }
+            return click_response(message: "Failed to interact with project row", uiTree: [])
         }
         
-        // For non-AXOutlineRow elements, use standard click actions
-        if elementSubrole != "AXOutlineRow" {
-            let actionSequence = ["AXPress", "AXConfirm", "AXPick"]
-            os_log("Using standard click actions for element %{public}@", log: log, type: .info, elementId)
-            
-            for action in actionSequence {
-                os_log("Attempting %{public}@ action on element %{public}@", log: log, type: .debug, action, elementId)
-                let result = AXUIElementPerformAction(axElement, action as CFString)
-                
-                if result == .success {
-                    os_log("Successfully performed %{public}@ action on element %{public}@", log: log, type: .info, action, elementId)
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully clicked the element using \(action)", uiTree: uitree)
-                } else {
-                    os_log("Action %{public}@ failed with error %d", log: log, type: .debug, action, result.rawValue)
-                }
-            }
-            
-            return click_response(message: "Failed to click element with ID: \(elementId). Tried standard actions but all failed.", uiTree: [])
+        // For standard elements (buttons, etc.), use AXPress
+        let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+        if result == .success {
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return click_response(message: "Successfully clicked the element", uiTree: uitree)
         }
         
-        // If we reach here, it means AXOutlineRow handling above failed completely
-        return click_response(message: "Failed to click AXOutlineRow element with ID: \(elementId). All accessibility actions and double-click fallback failed.", uiTree: [])
+        // Simple fallback for standard elements
+        let confirmResult = AXUIElementPerformAction(axElement, "AXConfirm" as CFString)
+        if confirmResult == .success {
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+        }
+        
+        return click_response(message: "Failed to click element with ID: \(elementId)", uiTree: [])
         
     }
 
