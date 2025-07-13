@@ -410,7 +410,7 @@ public actor StateManager {
     }
 
     /// Clicks a UI element by its ID using direct AXUIElement reference
-    public func clickElementById(applicationIdentifier: String, elementId: String) async throws {
+    public func clickElementById(applicationIdentifier: String, elementId: String) async throws -> click_response {
         os_log("Clicking element %{public}@ for %{public}@", log: log, type: .debug, elementId, applicationIdentifier)
 
         guard AXIsProcessTrusted() else {
@@ -427,10 +427,14 @@ public actor StateManager {
         // Perform click action directly on AXUIElement
         let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
         if result != .success {
-            throw NudgeError.invalidRequest(message: "Failed to click element with ID '\(elementId)'")
+            return click_response(message: "Failed to click the element with ID: \(elementId)", uiTree: [])
         }
-        
+
         os_log("Successfully clicked element %@", log: log, type: .info, elementId)
+        let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+
+        return click_response(message: "Successfully clicked the element", uiTree: uitree)
+        
     }
 
     /// Checks if an element exists in the registry (for testing)

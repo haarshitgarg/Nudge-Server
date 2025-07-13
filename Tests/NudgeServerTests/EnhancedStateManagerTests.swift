@@ -142,13 +142,16 @@ final class EnhancedStateManagerTests: XCTestCase {
         if let firstElement = elements.first(where: { $0.description.contains("Button") || $0.description.contains("MenuItem") }) {
             let startTime = Date()
             
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
             
             let duration = Date().timeIntervalSince(startTime)
             XCTAssertLessThan(duration, 2.0, "Click should complete quickly with direct references")
+            
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
         }
     }
     
@@ -170,10 +173,13 @@ final class EnhancedStateManagerTests: XCTestCase {
         // Click multiple buttons if available
         let clickCount = min(3, buttons.count)
         for i in 0..<clickCount {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: buttons[i].element_id
             )
+            
+            // Verify each click response
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Small delay between clicks
             try await Task.sleep(for: .milliseconds(500))
@@ -288,7 +294,7 @@ final class EnhancedStateManagerTests: XCTestCase {
             
             // Test clickElementById performance
             let clickStartTime = Date()
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
@@ -296,6 +302,9 @@ final class EnhancedStateManagerTests: XCTestCase {
             let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
             
             XCTAssertLessThan(clickDuration, 2.0, "clickElementById should complete within 2 seconds")
+            
+            // Verify response structure
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Test updateUIElementTree performance
             let updateStartTime = Date()

@@ -20,7 +20,7 @@ public struct NavServerTools {
         
         Tool(
             name: "click_element_by_id",
-            description: "Click a UI element by its ID using direct AXUIElement reference for maximum performance and reliability.",
+            description: "Click a UI element by its ID using direct AXUIElement reference for maximum performance and reliability. Returns a struct that includes the status of the operation and a new ui tree with the original element at its root to help find any other specific elements if required.",
             inputSchema: .object([
                 "type": "object",
                 "properties": .object([

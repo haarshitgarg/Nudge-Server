@@ -22,3 +22,9 @@ extension UIElementInfo {
         return !element_id.isEmpty && !description.isEmpty
     }
 }
+
+// click element by id response
+public struct click_response: Codable, Sendable {
+    public var message: String
+    public var uiTree: [UIElementInfo]
+}
