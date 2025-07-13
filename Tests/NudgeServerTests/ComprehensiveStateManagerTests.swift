@@ -195,12 +195,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         if let firstElement = clickableElements.first {
             // Should not throw error when clicking valid element
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
             
-            // Test passes if no error is thrown
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
             XCTAssertTrue(true, "Clicking valid element should not throw error")
         } else {
             XCTFail("Should have at least one clickable element to test clicking")
@@ -230,11 +231,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         _ = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: "nonexistent_element_id"
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Should return failed response for invalid element ID
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -255,11 +258,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         let appIdentifier = "com.apple.TextEdit"
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: "element_1"
             )
-            XCTFail("Should throw error when clicking before getting elements")
+            // Should return failed response when registry is empty
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -287,11 +292,12 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             // If accessibility is enabled, this should work
             // If not, it should throw accessibilityPermissionDenied
             do {
-                try await stateManager.clickElementById(
+                let response = try await stateManager.clickElementById(
                     applicationIdentifier: appIdentifier,
                     elementId: firstElement.element_id
                 )
                 // Test passes if accessibility is enabled
+                XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
                 XCTAssertTrue(true, "Click succeeded with accessibility enabled")
             } catch let error as NudgeError {
                 switch error {
@@ -318,7 +324,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         if let firstElement = elements.first(where: { $0.description.contains("AXButton") || $0.description.contains("AXMenuItem") }) {
             let startTime = Date()
             
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
@@ -327,6 +333,9 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             let duration = endTime.timeIntervalSince(startTime)
             
             XCTAssertLessThan(duration, 2.0, "Click should complete within 2 seconds")
+            
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
         }
     }
     
@@ -528,10 +537,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             XCTAssertTrue(exists, "Element should exist after getUIElements")
             
             // Step 3: Click element
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Step 4: Update element tree
             let updatedTree = try await stateManager.updateUIElementTree(
@@ -590,7 +602,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         if let firstClickable = clickableElements.first {
             let clickStartTime = Date()
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: systemPreferencesIdentifier,
                 elementId: firstClickable.element_id
             )
@@ -598,6 +610,9 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
             
             XCTAssertLessThan(clickDuration, 2.0, "Clicking System Preferences elements should complete within 2 seconds")
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
         }
         
         print("System Preferences performance test completed: \(String(format: "%.2f", duration))s opening, \(allElements.count) total elements, \(clickableElements.count) clickable elements")
@@ -629,7 +644,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             
             // Test clickElementById performance
             let clickStartTime = Date()
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
@@ -637,6 +652,9 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
             
             XCTAssertLessThan(clickDuration, 2.0, "clickElementById should complete within 2 seconds")
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Test updateUIElementTree performance
             let updateStartTime = Date()

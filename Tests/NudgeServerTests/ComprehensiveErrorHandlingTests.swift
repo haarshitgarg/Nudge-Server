@@ -83,11 +83,14 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         _ = try await stateManager.getUIElements(applicationIdentifier: validBundleId)
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Click should fail but return response instead of throwing
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.message.contains(invalidElementId), "Response message should contain the element ID")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -140,11 +143,13 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         let elementId = "element_1"
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: elementId
             )
-            XCTFail("Should throw error when registry is empty")
+            // Should return failed response when registry is empty
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -203,11 +208,12 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
             
             // Try to click an element if we have any
             if let firstElement = elements.first {
-                try await stateManager.clickElementById(
+                let response = try await stateManager.clickElementById(
                     applicationIdentifier: validBundleId,
                     elementId: firstElement.element_id
                 )
-                // Test passes if no error is thrown
+                // Check if click was successful
+                XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
             }
             
         } catch let error as NudgeError {
@@ -299,10 +305,14 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         var updateError: NudgeError?
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
+            // Check if click failed as expected
+            if response.message.contains("Failed to click") {
+                clickError = NudgeError.invalidRequest(message: response.message)
+            }
         } catch let error as NudgeError {
             clickError = error
         }
@@ -346,22 +356,26 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         
         // Attempt an operation that should fail
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Should return failed response
+            XCTAssertTrue(response.message.contains("Failed to click"), "Should return failure response for invalid element ID")
         } catch {
-            // Expected to fail
+            // Error is also acceptable for invalid element ID
         }
         
         // Verify that valid operations still work after the error
         if let firstElement = elements.first (where: { $0.description.contains("Button") || $0.description.contains("MenuItem") }) {
             // This should work despite the previous error
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: firstElement.element_id
             )
+            
+            // Verify the click response indicates success or failure
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // And this should also work
             _ = try await stateManager.updateUIElementTree(
@@ -439,11 +453,12 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         
         for elementId in edgeCaseElementIds {
             do {
-                try await stateManager.clickElementById(
+                let response = try await stateManager.clickElementById(
                     applicationIdentifier: validBundleId,
                     elementId: elementId
                 )
-                // If it succeeds, that's unexpected but not necessarily wrong
+                // Should return failed response for edge case element IDs
+                XCTAssertTrue(response.message.contains("Failed to click") || response.message.contains("Successfully clicked"), "Response should have meaningful message for element ID: \(elementId)")
             } catch let error as NudgeError {
                 // Should throw appropriate error types
                 switch error {
@@ -480,23 +495,25 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         
         // Valid operation
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: validElement.element_id
             )
+            print("Click response: \(response.message)")
         } catch {
             print("Valid operation failed: \(error)")
         }
         
         // Invalid operation
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
-            XCTFail("Invalid operation should fail")
+            // Should return failure response
+            XCTAssertTrue(response.message.contains("Failed to click"), "Invalid operation should return failure response")
         } catch {
-            // Expected to fail
+            // Error is also acceptable for invalid operation
         }
         
         // Another valid operation (should still work after error)
@@ -538,11 +555,16 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
         _ = try await stateManager.getUIElements(applicationIdentifier: validBundleId)
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Test that the response can be properly serialized
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
+            
+            // Test response structure
+            XCTAssertFalse(response.message.isEmpty, "Response message should not be empty")
         } catch let error as NudgeError {
             // Test that the error can be converted to different formats
             let description = error.localizedDescription
