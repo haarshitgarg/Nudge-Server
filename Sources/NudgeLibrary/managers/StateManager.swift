@@ -579,7 +579,7 @@ public actor StateManager {
         
         if setValueResult == .success {
             os_log("Successfully set text using AXValue attribute", log: log, type: .info)
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
             return text_input_response(message: "Successfully set text in element", uiTree: uitree)
         }
         
@@ -596,7 +596,7 @@ public actor StateManager {
                 let replaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
                 if replaceResult == .success {
                     os_log("Successfully set text using selected text fallback", log: log, type: .info)
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                    let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
                     return text_input_response(message: "Successfully set text in element (using fallback)", uiTree: uitree)
                 }
             }
@@ -606,7 +606,7 @@ public actor StateManager {
         let directReplaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
         if directReplaceResult == .success {
             os_log("Successfully set text using direct selected text", log: log, type: .info)
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
             return text_input_response(message: "Successfully set text in element (using direct fallback)", uiTree: uitree)
         }
         
