@@ -115,7 +115,8 @@ public actor StateManager {
             "AXDockItem",        // Dock items - flatten to show dock content
             "AXDrawer",          // Drawer containers - flatten to show drawer content
             "AXPane",            // Pane containers - flatten to show pane content
-            "AXSplitLayoutArea"  // Split layout containers - flatten to show layout content
+            "AXSplitLayoutArea", // Split layout containers - flatten to show layout content
+            "AXCell"
         ]
         
         // Check if this element should be flattened
@@ -189,6 +190,14 @@ public actor StateManager {
             descriptionParts.append(value)
         }
         
+        // Special handling for AXCell elements - extract information from children
+        if let role = role, role == "AXRow" || role == "AXColumn" {
+            let childrenInfo = extractChildrenInfo(from: element)
+            if !childrenInfo.isEmpty {
+                descriptionParts.append(contentsOf: childrenInfo)
+            }
+        }
+        
         if let role = role {
             let cleanRole = role.replacingOccurrences(of: "AX", with: "")
             descriptionParts.append("(\(cleanRole))")
@@ -200,7 +209,46 @@ public actor StateManager {
             descriptionParts.append("- \(description)")
         }
         
-        return descriptionParts.joined(separator: " ")
+        return descriptionParts.joined(separator: ", ")
+    }
+    
+    /// Extracts useful information from children elements (used for AXCell, AXRow, AXColumn)
+    private func extractChildrenInfo(from element: AXUIElement) -> [String] {
+        var childrenInfo: [String] = []
+        
+        var childrenValue: CFTypeRef?
+        let childrenResult = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+        
+        if childrenResult == .success, let axChildren = childrenValue as? [AXUIElement] {
+            for child in axChildren {
+                // Get text content from child elements
+                if let childTitle = getAttribute(child, kAXTitleAttribute) as? String, !childTitle.isEmpty {
+                    childrenInfo.append(childTitle)
+                }
+                
+                if let childValue = getAttribute(child, kAXValueAttribute) as? String, !childValue.isEmpty {
+                    childrenInfo.append(childValue)
+                }
+                
+                // For text fields and static text, get the value
+                if let childRole = getAttribute(child, kAXRoleAttribute) as? String {
+                    if childRole == "AXStaticText" || childRole == "AXTextField" {
+                        if let text = getAttribute(child, kAXValueAttribute) as? String, !text.isEmpty {
+                            childrenInfo.append(text)
+                        }
+                    }
+                    
+                    // Special handling for AXCell children - extract info from their children (grandchildren)
+                    if childRole == "AXCell" {
+                        let grandchildrenInfo = extractChildrenInfo(from: child)
+                        childrenInfo.append(contentsOf: grandchildrenInfo)
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates and empty strings
+        return Array(Set(childrenInfo)).filter { !$0.isEmpty }
     }
     
     /// Checks if an element is actionable
@@ -360,10 +408,73 @@ public actor StateManager {
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         return result == .success ? value : nil
     }
+    
+    /// Performs coordinate-based double-click as fallback when accessibility actions fail
+    private func performDoubleClickFallback(element: AXUIElement) async throws -> Bool {
+        // Get element position
+        var positionValue: CFTypeRef?
+        let positionResult = AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue)
+        
+        guard positionResult == .success,
+              let position = positionValue,
+              CFGetTypeID(position) == AXValueGetTypeID() else {
+            os_log("Double-click fallback failed: Could not get element position", log: log, type: .error)
+            return false
+        }
+        
+        var point = CGPoint.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &point) else {
+            os_log("Double-click fallback failed: Could not extract CGPoint", log: log, type: .error)
+            return false
+        }
+        
+        // Get element size to click in center
+        var sizeValue: CFTypeRef?
+        let sizeResult = AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue)
+        if sizeResult == .success,
+           let size = sizeValue,
+           CFGetTypeID(size) == AXValueGetTypeID() {
+            var cgSize = CGSize.zero
+            if AXValueGetValue(size as! AXValue, .cgSize, &cgSize) {
+                point.x += cgSize.width / 2
+                point.y += cgSize.height / 2
+            }
+        }
+        
+        os_log("Performing double-click at position (%f, %f)", log: log, type: .debug, point.x, point.y)
+        
+        // Create double-click events
+        guard let mouseDown1 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+              let mouseUp1 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left),
+              let mouseDown2 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+              let mouseUp2 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else {
+            os_log("Double-click fallback failed: Could not create mouse events", log: log, type: .error)
+            return false
+        }
+        
+        // Set click count for double-click
+        mouseDown2.setIntegerValueField(.mouseEventClickState, value: 2)
+        mouseUp2.setIntegerValueField(.mouseEventClickState, value: 2)
+        
+        // Post events with proper timing
+        mouseDown1.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        mouseUp1.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(50))
+        mouseDown2.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        mouseUp2.post(tap: .cghidEventTap)
+        
+        // Allow time for action to take effect
+        try await Task.sleep(for: .milliseconds(200))
+        
+        os_log("Double-click completed", log: log, type: .debug)
+        return true
+    }
 
     /// Clicks a UI element by its ID using direct AXUIElement reference
-    public func clickElementById(applicationIdentifier: String, elementId: String) async throws {
-        os_log("Clicking element %{public}@ for %{public}@", log: log, type: .debug, elementId, applicationIdentifier)
+    public func clickElementById(applicationIdentifier: String, elementId: String) async throws -> click_response {
+        os_log("Clicking element %{public}@", log: log, type: .debug, elementId)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
@@ -373,16 +484,134 @@ public actor StateManager {
             throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
         }
 
-        let elementType = getAttribute(axElement, kAXRoleAttribute) as? String
-        os_log("Element type: %{public}@", log: log, type: .debug, elementType ?? "Unknown")
+        // Ensure the application is focused before performing any actions
+        try await focusApplication(bundleIdentifier: applicationIdentifier)
+
+        let elementSubrole = getAttribute(axElement, kAXSubroleAttribute) as? String
         
-        // Perform click action directly on AXUIElement
-        let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
-        if result != .success {
-            throw NudgeError.invalidRequest(message: "Failed to click element with ID '\(elementId)'")
+        // For AXOutlineRow elements (like Xcode project list), use double-click to open
+        if elementSubrole == "AXOutlineRow" {
+            os_log("AXOutlineRow detected - attempting double-click to open project", log: log, type: .info)
+            
+            // Try double-click first (this actually opens projects)
+            do {
+                let doubleClickSuccess = try await performDoubleClickFallback(element: axElement)
+                if doubleClickSuccess {
+                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                    return click_response(message: "Successfully opened project", uiTree: uitree)
+                }
+            } catch {
+                os_log("Double-click failed: %{public}@", log: log, type: .error, error.localizedDescription)
+            }
+            
+            // Fallback to selection (better than complete failure)
+            let result = AXUIElementPerformAction(axElement, "AXShowDefaultUI" as CFString)
+            if result == .success {
+                let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                return click_response(message: "Project selected (not opened - double-click failed)", uiTree: uitree)
+            }
+            
+            return click_response(message: "Failed to interact with project row", uiTree: [])
         }
         
-        os_log("Successfully clicked element %@", log: log, type: .info, elementId)
+        // For standard elements (buttons, etc.), use AXPress
+        let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+        if result == .success {
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+        }
+        
+        // Simple fallback for standard elements
+        let confirmResult = AXUIElementPerformAction(axElement, "AXConfirm" as CFString)
+        if confirmResult == .success {
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+        }
+        
+        return click_response(message: "Failed to click element with ID: \(elementId)", uiTree: [])
+        
+    }
+
+    /// Sets text in a UI element by its ID using direct AXUIElement reference
+    public func setTextInElement(applicationIdentifier: String, elementId: String, text: String) async throws -> text_input_response {
+        os_log("Setting text in element %{public}@ to: %{public}@", log: log, type: .debug, elementId, text)
+
+        guard AXIsProcessTrusted() else {
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        guard let axElement = elementRegistry[elementId] else {
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
+        }
+
+        // Verify the element is a text field
+        guard let role = getAttribute(axElement, kAXRoleAttribute) as? String else {
+            throw NudgeError.invalidRequest(message: "Could not determine element role for element '\(elementId)'.")
+        }
+        
+        let textFieldRoles = ["AXTextField", "AXSecureTextField", "AXSearchField", "AXTextArea", "AXComboBox"]
+        guard textFieldRoles.contains(role) else {
+            throw NudgeError.invalidRequest(message: "Element '\(elementId)' is not a text field (role: \(role)). Text can only be set in text fields.")
+        }
+
+        // Ensure the application is focused before performing any actions
+        try await focusApplication(bundleIdentifier: applicationIdentifier)
+
+        // Focus the text field element first
+        let focusResult = AXUIElementSetAttributeValue(axElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if focusResult != .success {
+            // If direct focus fails, try focusing the parent window first
+            var windowValue: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axElement, kAXWindowAttribute as CFString, &windowValue) == .success,
+               let window = windowValue {
+                // Focus the window first
+                AXUIElementSetAttributeValue(window as! AXUIElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                // Then focus the text field
+                AXUIElementSetAttributeValue(axElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            }
+        }
+        
+        // Small delay to ensure focus is set
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Try to set the text using AXValue attribute
+        let setValueResult = AXUIElementSetAttributeValue(axElement, kAXValueAttribute as CFString, text as CFString)
+        
+        if setValueResult == .success {
+            os_log("Successfully set text using AXValue attribute", log: log, type: .info)
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
+            return text_input_response(message: "Successfully set text in element", uiTree: uitree)
+        }
+        
+        // Fallback: Try using selected text attribute
+        os_log("AXValue failed, trying selected text fallback", log: log, type: .debug)
+        
+        // First, select all existing text
+        var textRangeValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axElement, kAXVisibleCharacterRangeAttribute as CFString, &textRangeValue) == .success,
+           let textRange = textRangeValue {
+            let selectAllResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextRangeAttribute as CFString, textRange)
+            if selectAllResult == .success {
+                // Now replace the selected text
+                let replaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
+                if replaceResult == .success {
+                    os_log("Successfully set text using selected text fallback", log: log, type: .info)
+                    let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
+                    return text_input_response(message: "Successfully set text in element (using fallback)", uiTree: uitree)
+                }
+            }
+        }
+        
+        // Final fallback: Just try to set selected text directly
+        let directReplaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
+        if directReplaceResult == .success {
+            os_log("Successfully set text using direct selected text", log: log, type: .info)
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
+            return text_input_response(message: "Successfully set text in element (using direct fallback)", uiTree: uitree)
+        }
+        
+        os_log("All text setting methods failed for element %{public}@", log: log, type: .error, elementId)
+        return text_input_response(message: "Failed to set text in element with ID: \(elementId)", uiTree: [])
     }
 
     /// Checks if an element exists in the registry (for testing)

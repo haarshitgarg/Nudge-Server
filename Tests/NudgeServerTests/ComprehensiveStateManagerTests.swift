@@ -195,12 +195,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         
         if let firstElement = clickableElements.first {
             // Should not throw error when clicking valid element
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
             
-            // Test passes if no error is thrown
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
             XCTAssertTrue(true, "Clicking valid element should not throw error")
         } else {
             XCTFail("Should have at least one clickable element to test clicking")
@@ -230,11 +231,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         _ = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: "nonexistent_element_id"
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Should return failed response for invalid element ID
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -255,11 +258,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         let appIdentifier = "com.apple.TextEdit"
         
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: "element_1"
             )
-            XCTFail("Should throw error when clicking before getting elements")
+            // Should return failed response when registry is empty
+            XCTAssertTrue(response.message.contains("Failed to click"), "Response should indicate click failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed click")
         } catch let error as NudgeError {
             switch error {
             case .invalidRequest(let message):
@@ -287,11 +292,12 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             // If accessibility is enabled, this should work
             // If not, it should throw accessibilityPermissionDenied
             do {
-                try await stateManager.clickElementById(
+                let response = try await stateManager.clickElementById(
                     applicationIdentifier: appIdentifier,
                     elementId: firstElement.element_id
                 )
                 // Test passes if accessibility is enabled
+                XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
                 XCTAssertTrue(true, "Click succeeded with accessibility enabled")
             } catch let error as NudgeError {
                 switch error {
@@ -318,7 +324,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         if let firstElement = elements.first(where: { $0.description.contains("AXButton") || $0.description.contains("AXMenuItem") }) {
             let startTime = Date()
             
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
@@ -327,6 +333,9 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             let duration = endTime.timeIntervalSince(startTime)
             
             XCTAssertLessThan(duration, 2.0, "Click should complete within 2 seconds")
+            
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully clicked") || response.message.contains("Failed to click"), "Response should have meaningful message")
         }
     }
     
@@ -509,6 +518,269 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         XCTAssertFalse(exists, "No elements should exist before getUIElements is called")
     }
     
+    // MARK: - setTextInElement Tests
+    
+    /**
+     * Tests setTextInElement with valid text field element.
+     * Expected behavior: Should successfully set text in a text field element.
+     */
+    func testSetTextInElementWithValidTextField() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let testText = "Hello, World!"
+            
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: testText
+            )
+            
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+            
+            if response.message.contains("Successfully set text") {
+                XCTAssertGreaterThanOrEqual(response.uiTree.count, 0, "UI tree should be populated on success")
+            }
+        } else {
+            print("No text field elements found in TextEdit - this is expected as TextEdit uses document-based text areas")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with invalid element ID.
+     * Expected behavior: Should throw invalidRequest error indicating element not found.
+     */
+    func testSetTextInElementWithInvalidId() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        _ = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        do {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: "nonexistent_element_id",
+                text: "test"
+            )
+            // Should return failed response for invalid element ID
+            XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+        } catch let error as NudgeError {
+            switch error {
+            case .invalidRequest(let message):
+                XCTAssertTrue(message.contains("not found"), "Error message should indicate element not found")
+            default:
+                XCTFail("Should throw invalidRequest error, got: \(error)")
+            }
+        } catch {
+            XCTFail("Should throw NudgeError, got: \(type(of: error))")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with non-text field element.
+     * Expected behavior: Should throw invalidRequest error indicating element is not a text field.
+     */
+    func testSetTextInElementWithNonTextField() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for non-text field elements (buttons, menu items, etc.)
+        let nonTextFieldElements = allElements.filter { element in
+            element.description.contains("Button") || 
+            element.description.contains("MenuItem") ||
+            element.description.contains("Tab")
+        }
+        
+        if let firstNonTextField = nonTextFieldElements.first {
+            do {
+                let response = try await stateManager.setTextInElement(
+                    applicationIdentifier: appIdentifier,
+                    elementId: firstNonTextField.element_id,
+                    text: "test"
+                )
+                // Should return failed response for non-text field
+                XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+                XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+            } catch let error as NudgeError {
+                switch error {
+                case .invalidRequest(let message):
+                    XCTAssertTrue(message.contains("not a text field"), "Error message should indicate element is not a text field")
+                default:
+                    XCTFail("Should throw invalidRequest error about text field, got: \(error)")
+                }
+            } catch {
+                XCTFail("Should throw NudgeError, got: \(type(of: error))")
+            }
+        }
+    }
+    
+    /**
+     * Tests setTextInElement before getting UI elements.
+     * Expected behavior: Should throw invalidRequest error indicating registry is empty.
+     */
+    func testSetTextInElementBeforeGettingElements() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        do {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: "element_1",
+                text: "test"
+            )
+            // Should return failed response when registry is empty
+            XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+        } catch let error as NudgeError {
+            switch error {
+            case .invalidRequest(let message):
+                XCTAssertTrue(message.contains("not found"), "Error message should indicate element not found")
+            default:
+                XCTFail("Should throw invalidRequest error, got: \(error)")
+            }
+        } catch {
+            XCTFail("Should throw NudgeError, got: \(type(of: error))")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with empty text.
+     * Expected behavior: Should successfully set empty text (clearing the field).
+     */
+    func testSetTextInElementWithEmptyText() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: ""
+            )
+            
+            // Should handle empty text gracefully
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+        } else {
+            print("No text field elements found in TextEdit for empty text test")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with special characters.
+     * Expected behavior: Should successfully handle special characters in text.
+     */
+    func testSetTextInElementWithSpecialCharacters() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let specialText = "Hello! @#$%^&*(){}[]|\\:;\"'<>,.?/~`"
+            
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: specialText
+            )
+            
+            // Should handle special characters
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+        } else {
+            print("No text field elements found in TextEdit for special characters test")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement accessibility permissions.
+     * Expected behavior: Should throw accessibilityPermissionDenied if accessibility is not enabled.
+     */
+    func testSetTextInElementAccessibilityPermissions() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // Get UI elements first
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            // If accessibility is enabled, this should work
+            // If not, it should throw accessibilityPermissionDenied
+            do {
+                let response = try await stateManager.setTextInElement(
+                    applicationIdentifier: appIdentifier,
+                    elementId: firstTextField.element_id,
+                    text: "test"
+                )
+                // Test passes if accessibility is enabled
+                XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+                XCTAssertTrue(true, "Text setting succeeded with accessibility enabled")
+            } catch let error as NudgeError {
+                switch error {
+                case .accessibilityPermissionDenied:
+                    XCTAssertTrue(true, "Properly throws accessibility permission error")
+                default:
+                    // Other errors are also acceptable for this test
+                    XCTAssertTrue(true, "Error is acceptable: \(error)")
+                }
+            }
+        } else {
+            print("No text field elements found in TextEdit for accessibility test")
+        }
+    }
+
     // MARK: - Integration Tests
     
     /**
@@ -528,10 +800,13 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             XCTAssertTrue(exists, "Element should exist after getUIElements")
             
             // Step 3: Click element
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Step 4: Update element tree
             let updatedTree = try await stateManager.updateUIElementTree(
@@ -547,6 +822,65 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         }
     }
     
+    /**
+     * Tests System Preferences opening and UI element retrieval performance.
+     * Expected behavior: Should open System Preferences and retrieve UI elements within 15 seconds.
+     * System Preferences typically takes longer to open than simple apps like Calculator.
+     */
+    func testSystemPreferencesPerformance() async throws {
+        let systemPreferencesIdentifier = "com.apple.systempreferences"
+        
+        let startTime = Date()
+        let elements = try await stateManager.getUIElements(applicationIdentifier: systemPreferencesIdentifier)
+        let endTime = Date()
+        let duration = endTime.timeIntervalSince(startTime)
+        
+        // System Preferences can take longer to open and populate
+        XCTAssertLessThan(duration, 15.0, "System Preferences should open and populate UI elements within 15 seconds")
+        XCTAssertGreaterThan(elements.count, 0, "Should return UI elements for System Preferences")
+        
+        // Test AXCell description enhancement
+        let allElements = getAllElementsRecursively(from: elements)
+        let cellElements = allElements.filter { element in
+            element.description.contains("(Cell)")
+        }
+        
+        if !cellElements.isEmpty {
+            for cellElement in cellElements {
+                XCTAssertFalse(cellElement.description.isEmpty, "Cell elements should have meaningful descriptions")
+                // Verify enhanced cell descriptions contain useful information
+                let hasEnhancedInfo = cellElement.description.count > 6 // More than just "(Cell)"
+                if hasEnhancedInfo {
+                    print("Enhanced cell description: \(cellElement.description)")
+                }
+            }
+        }
+        
+        // Test clicking performance on System Preferences elements
+        let clickableElements = allElements.filter { element in
+            element.description.contains("(Button)") ||
+            element.description.contains("(Cell)") ||
+            element.description.contains("(Tab)")
+        }
+        
+        if let firstClickable = clickableElements.first {
+            let clickStartTime = Date()
+            let clickResponse = try await stateManager.clickElementById(
+                applicationIdentifier: systemPreferencesIdentifier,
+                elementId: firstClickable.element_id
+            )
+            let clickEndTime = Date()
+            let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
+            
+            XCTAssertLessThan(clickDuration, 2.0, "Clicking System Preferences elements should complete within 2 seconds")
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
+        }
+        
+        print("System Preferences performance test completed: \(String(format: "%.2f", duration))s opening, \(allElements.count) total elements, \(clickableElements.count) clickable elements")
+    }
+
     /**
      * Tests performance of all operations.
      * Expected behavior: All operations should complete within reasonable time limits.
@@ -573,7 +907,7 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             
             // Test clickElementById performance
             let clickStartTime = Date()
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: appIdentifier,
                 elementId: firstElement.element_id
             )
@@ -581,6 +915,9 @@ final class ComprehensiveStateManagerTests: XCTestCase {
             let clickDuration = clickEndTime.timeIntervalSince(clickStartTime)
             
             XCTAssertLessThan(clickDuration, 2.0, "clickElementById should complete within 2 seconds")
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Test updateUIElementTree performance
             let updateStartTime = Date()

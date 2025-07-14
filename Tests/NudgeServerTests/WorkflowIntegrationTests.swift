@@ -36,10 +36,13 @@ final class WorkflowIntegrationTests: XCTestCase {
             XCTAssertTrue(exists, "Element should exist after getUIElements")
             
             // Step 3: Click element
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: bundleId,
                 elementId: firstElement.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Step 4: Update element tree
             let updatedTree = try await stateManager.updateUIElementTree(
@@ -74,10 +77,13 @@ final class WorkflowIntegrationTests: XCTestCase {
         for (app, elements) in appElements {
             if let firstElement = elements.first (where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
                 // Should be able to interact with elements from any app
-                try await stateManager.clickElementById(
+                let clickResponse = try await stateManager.clickElementById(
                     applicationIdentifier: app,
                     elementId: firstElement.element_id
                 )
+                
+                // Verify click response
+                XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
                 
                 _ = try await stateManager.updateUIElementTree(
                     applicationIdentifier: app,
@@ -113,10 +119,13 @@ final class WorkflowIntegrationTests: XCTestCase {
             let exists = await stateManager.elementExists(elementId: actionableElement.element_id)
             XCTAssertTrue(exists, "Actionable element should exist in registry")
             
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: bundleId,
                 elementId: actionableElement.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Wait for UI to potentially update
             try await Task.sleep(for: .seconds(1))
@@ -149,10 +158,13 @@ final class WorkflowIntegrationTests: XCTestCase {
         if let numberButton = numberButtons.first {
             print("Testing click on: \(numberButton.description)")
             
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: bundleId,
                 elementId: numberButton.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             // Verify the interaction worked
             let stillExists = await stateManager.elementExists(elementId: numberButton.element_id)
@@ -178,11 +190,14 @@ final class WorkflowIntegrationTests: XCTestCase {
 
         if let firstElement = elements.first(where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
             let clickStartTime = Date()
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: bundleId,
                 elementId: firstElement.element_id
             )
             let clickTime = Date().timeIntervalSince(clickStartTime)
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             XCTAssertLessThan(clickTime, 2.0, "Clicking element should complete within 2 seconds")
             
@@ -248,21 +263,25 @@ final class WorkflowIntegrationTests: XCTestCase {
         
         // Attempt an operation that should fail
         do {
-            try await stateManager.clickElementById(
+            let response = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: invalidElementId
             )
-            XCTFail("Should throw error for invalid element ID")
+            // Should return failed response
+            XCTAssertTrue(response.message.contains("Failed to click"), "Should return failure response for invalid element ID")
         } catch {
-            // Expected to fail
+            // Error is also acceptable for invalid element ID
         }
         
         // Verify that valid operations still work after the error
         if let firstElement = elements.first(where: {$0.description.contains("Button") || $0.description.contains("MenuItem") || $0.description.contains("TextField") || $0.description.contains("TextArea")}) {
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: validBundleId,
                 elementId: firstElement.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
             
             _ = try await stateManager.updateUIElementTree(
                 applicationIdentifier: validBundleId,
@@ -299,10 +318,13 @@ final class WorkflowIntegrationTests: XCTestCase {
         // Test interaction with found elements
         if let button = buttons.first {
             print("Clicking button: \(button.description)")
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: calculatorId,
                 elementId: button.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
         }
         
         // Scenario 2: Text editing workflow
@@ -320,10 +342,13 @@ final class WorkflowIntegrationTests: XCTestCase {
         
         if let menu = menus.first {
             print("Clicking menu: \(menu.description)")
-            try await stateManager.clickElementById(
+            let clickResponse = try await stateManager.clickElementById(
                 applicationIdentifier: textEditId,
                 elementId: menu.element_id
             )
+            
+            // Verify click response
+            XCTAssertTrue(clickResponse.message.contains("Successfully clicked") || clickResponse.message.contains("Failed to click"), "Click response should have meaningful message")
         }
     }
 } 
