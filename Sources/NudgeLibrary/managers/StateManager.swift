@@ -532,6 +532,88 @@ public actor StateManager {
         
     }
 
+    /// Sets text in a UI element by its ID using direct AXUIElement reference
+    public func setTextInElement(applicationIdentifier: String, elementId: String, text: String) async throws -> text_input_response {
+        os_log("Setting text in element %{public}@ to: %{public}@", log: log, type: .debug, elementId, text)
+
+        guard AXIsProcessTrusted() else {
+            throw NudgeError.accessibilityPermissionDenied
+        }
+
+        guard let axElement = elementRegistry[elementId] else {
+            throw NudgeError.invalidRequest(message: "Element with ID '\(elementId)' not found. Call get_ui_elements first.")
+        }
+
+        // Verify the element is a text field
+        guard let role = getAttribute(axElement, kAXRoleAttribute) as? String else {
+            throw NudgeError.invalidRequest(message: "Could not determine element role for element '\(elementId)'.")
+        }
+        
+        let textFieldRoles = ["AXTextField", "AXSecureTextField", "AXSearchField", "AXTextArea", "AXComboBox"]
+        guard textFieldRoles.contains(role) else {
+            throw NudgeError.invalidRequest(message: "Element '\(elementId)' is not a text field (role: \(role)). Text can only be set in text fields.")
+        }
+
+        // Ensure the application is focused before performing any actions
+        try await focusApplication(bundleIdentifier: applicationIdentifier)
+
+        // Focus the text field element first
+        let focusResult = AXUIElementSetAttributeValue(axElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if focusResult != .success {
+            // If direct focus fails, try focusing the parent window first
+            var windowValue: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axElement, kAXWindowAttribute as CFString, &windowValue) == .success,
+               let window = windowValue {
+                // Focus the window first
+                AXUIElementSetAttributeValue(window as! AXUIElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                // Then focus the text field
+                AXUIElementSetAttributeValue(axElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            }
+        }
+        
+        // Small delay to ensure focus is set
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Try to set the text using AXValue attribute
+        let setValueResult = AXUIElementSetAttributeValue(axElement, kAXValueAttribute as CFString, text as CFString)
+        
+        if setValueResult == .success {
+            os_log("Successfully set text using AXValue attribute", log: log, type: .info)
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return text_input_response(message: "Successfully set text in element", uiTree: uitree)
+        }
+        
+        // Fallback: Try using selected text attribute
+        os_log("AXValue failed, trying selected text fallback", log: log, type: .debug)
+        
+        // First, select all existing text
+        var textRangeValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axElement, kAXVisibleCharacterRangeAttribute as CFString, &textRangeValue) == .success,
+           let textRange = textRangeValue {
+            let selectAllResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextRangeAttribute as CFString, textRange)
+            if selectAllResult == .success {
+                // Now replace the selected text
+                let replaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
+                if replaceResult == .success {
+                    os_log("Successfully set text using selected text fallback", log: log, type: .info)
+                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                    return text_input_response(message: "Successfully set text in element (using fallback)", uiTree: uitree)
+                }
+            }
+        }
+        
+        // Final fallback: Just try to set selected text directly
+        let directReplaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
+        if directReplaceResult == .success {
+            os_log("Successfully set text using direct selected text", log: log, type: .info)
+            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+            return text_input_response(message: "Successfully set text in element (using direct fallback)", uiTree: uitree)
+        }
+        
+        os_log("All text setting methods failed for element %{public}@", log: log, type: .error, elementId)
+        return text_input_response(message: "Failed to set text in element with ID: \(elementId)", uiTree: [])
+    }
+
     /// Checks if an element exists in the registry (for testing)
     func elementExists(elementId: String) -> Bool {
         return elementRegistry[elementId] != nil

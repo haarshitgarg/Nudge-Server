@@ -28,3 +28,9 @@ public struct click_response: Codable, Sendable {
     public var message: String
     public var uiTree: [UIElementInfo]
 }
+
+// text input response
+public struct text_input_response: Codable, Sendable {
+    public var message: String
+    public var uiTree: [UIElementInfo]
+}

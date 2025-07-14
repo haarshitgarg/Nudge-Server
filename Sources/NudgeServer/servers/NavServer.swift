@@ -19,6 +19,12 @@ fileprivate struct UpdateUIElementTreeArguments: Decodable {
     let element_id: String
 }
 
+fileprivate struct SetTextInElementArguments: Decodable {
+    let bundle_identifier: String
+    let element_id: String
+    let text: String
+}
+
 struct NavServer: Service {
     private let server: Server
     private let transport: Transport
@@ -131,6 +137,38 @@ struct NavServer: Service {
                     return CallTool.Result(content: [.text(updatedTreeString)], isError: false)
                 } catch {
                     logger.error("Error in update_ui_element_tree: \(error.localizedDescription)")
+                    return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)
+                }
+
+            case "set_text_in_element":
+                logger.info("Setting text in element")
+                guard let arguments = params.arguments else {
+                    logger.error("Missing arguments for set_text_in_element")
+                    return CallTool.Result(content: [.text("Missing arguments")], isError: true)
+                }
+
+                do {
+                    let data = try JSONEncoder().encode(arguments)
+                    let args = try JSONDecoder().decode(SetTextInElementArguments.self, from: data)
+                    
+                    logger.info("Setting text in element \(args.element_id) in \(args.bundle_identifier)")
+
+                    let response = try await StateManager.shared.setTextInElement(
+                        applicationIdentifier: args.bundle_identifier,
+                        elementId: args.element_id,
+                        text: args.text
+                    )
+                    let elements = response.uiTree
+
+                    let elementsData = try jsonencoder.encode(elements)
+                    guard let elementsString = String(data: elementsData, encoding: .utf8) else {
+                        throw NudgeError.invalidRequest(message: "Failed to encode UI elements")
+                    }
+                    
+                    logger.info("\(response.message)")
+                    return CallTool.Result(content: [.text("\(response.message)\n New ui tree for element:\n \(elementsString)")], isError: false)
+                } catch {
+                    logger.error("Error in set_text_in_element: \(error.localizedDescription)")
                     return CallTool.Result(content: [.text(error.localizedDescription)], isError: true)
                 }
 
