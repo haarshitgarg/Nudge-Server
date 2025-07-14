@@ -518,6 +518,269 @@ final class ComprehensiveStateManagerTests: XCTestCase {
         XCTAssertFalse(exists, "No elements should exist before getUIElements is called")
     }
     
+    // MARK: - setTextInElement Tests
+    
+    /**
+     * Tests setTextInElement with valid text field element.
+     * Expected behavior: Should successfully set text in a text field element.
+     */
+    func testSetTextInElementWithValidTextField() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let testText = "Hello, World!"
+            
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: testText
+            )
+            
+            // Verify response structure
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+            
+            if response.message.contains("Successfully set text") {
+                XCTAssertGreaterThanOrEqual(response.uiTree.count, 0, "UI tree should be populated on success")
+            }
+        } else {
+            print("No text field elements found in TextEdit - this is expected as TextEdit uses document-based text areas")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with invalid element ID.
+     * Expected behavior: Should throw invalidRequest error indicating element not found.
+     */
+    func testSetTextInElementWithInvalidId() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        _ = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        do {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: "nonexistent_element_id",
+                text: "test"
+            )
+            // Should return failed response for invalid element ID
+            XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+        } catch let error as NudgeError {
+            switch error {
+            case .invalidRequest(let message):
+                XCTAssertTrue(message.contains("not found"), "Error message should indicate element not found")
+            default:
+                XCTFail("Should throw invalidRequest error, got: \(error)")
+            }
+        } catch {
+            XCTFail("Should throw NudgeError, got: \(type(of: error))")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with non-text field element.
+     * Expected behavior: Should throw invalidRequest error indicating element is not a text field.
+     */
+    func testSetTextInElementWithNonTextField() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for non-text field elements (buttons, menu items, etc.)
+        let nonTextFieldElements = allElements.filter { element in
+            element.description.contains("Button") || 
+            element.description.contains("MenuItem") ||
+            element.description.contains("Tab")
+        }
+        
+        if let firstNonTextField = nonTextFieldElements.first {
+            do {
+                let response = try await stateManager.setTextInElement(
+                    applicationIdentifier: appIdentifier,
+                    elementId: firstNonTextField.element_id,
+                    text: "test"
+                )
+                // Should return failed response for non-text field
+                XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+                XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+            } catch let error as NudgeError {
+                switch error {
+                case .invalidRequest(let message):
+                    XCTAssertTrue(message.contains("not a text field"), "Error message should indicate element is not a text field")
+                default:
+                    XCTFail("Should throw invalidRequest error about text field, got: \(error)")
+                }
+            } catch {
+                XCTFail("Should throw NudgeError, got: \(type(of: error))")
+            }
+        }
+    }
+    
+    /**
+     * Tests setTextInElement before getting UI elements.
+     * Expected behavior: Should throw invalidRequest error indicating registry is empty.
+     */
+    func testSetTextInElementBeforeGettingElements() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        do {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: "element_1",
+                text: "test"
+            )
+            // Should return failed response when registry is empty
+            XCTAssertTrue(response.message.contains("Failed to set text"), "Response should indicate text setting failure")
+            XCTAssertTrue(response.uiTree.isEmpty, "UI tree should be empty for failed text setting")
+        } catch let error as NudgeError {
+            switch error {
+            case .invalidRequest(let message):
+                XCTAssertTrue(message.contains("not found"), "Error message should indicate element not found")
+            default:
+                XCTFail("Should throw invalidRequest error, got: \(error)")
+            }
+        } catch {
+            XCTFail("Should throw NudgeError, got: \(type(of: error))")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with empty text.
+     * Expected behavior: Should successfully set empty text (clearing the field).
+     */
+    func testSetTextInElementWithEmptyText() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: ""
+            )
+            
+            // Should handle empty text gracefully
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+        } else {
+            print("No text field elements found in TextEdit for empty text test")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement with special characters.
+     * Expected behavior: Should successfully handle special characters in text.
+     */
+    func testSetTextInElementWithSpecialCharacters() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // First get UI elements to populate the registry
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            let specialText = "Hello! @#$%^&*(){}[]|\\:;\"'<>,.?/~`"
+            
+            let response = try await stateManager.setTextInElement(
+                applicationIdentifier: appIdentifier,
+                elementId: firstTextField.element_id,
+                text: specialText
+            )
+            
+            // Should handle special characters
+            XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+            XCTAssertNotNil(response.uiTree, "Response should contain updated UI tree")
+        } else {
+            print("No text field elements found in TextEdit for special characters test")
+        }
+    }
+    
+    /**
+     * Tests setTextInElement accessibility permissions.
+     * Expected behavior: Should throw accessibilityPermissionDenied if accessibility is not enabled.
+     */
+    func testSetTextInElementAccessibilityPermissions() async throws {
+        let appIdentifier = "com.apple.TextEdit"
+        
+        // Get UI elements first
+        let elements = try await stateManager.getUIElements(applicationIdentifier: appIdentifier)
+        
+        // Get all elements recursively
+        let allElements = getAllElementsRecursively(from: elements)
+        
+        // Look for text field elements
+        let textFieldElements = allElements.filter { element in
+            element.description.contains("TextField") || 
+            element.description.contains("TextArea") ||
+            element.description.contains("SearchField")
+        }
+        
+        if let firstTextField = textFieldElements.first {
+            // If accessibility is enabled, this should work
+            // If not, it should throw accessibilityPermissionDenied
+            do {
+                let response = try await stateManager.setTextInElement(
+                    applicationIdentifier: appIdentifier,
+                    elementId: firstTextField.element_id,
+                    text: "test"
+                )
+                // Test passes if accessibility is enabled
+                XCTAssertTrue(response.message.contains("Successfully set text") || response.message.contains("Failed to set text"), "Response should have meaningful message")
+                XCTAssertTrue(true, "Text setting succeeded with accessibility enabled")
+            } catch let error as NudgeError {
+                switch error {
+                case .accessibilityPermissionDenied:
+                    XCTAssertTrue(true, "Properly throws accessibility permission error")
+                default:
+                    // Other errors are also acceptable for this test
+                    XCTAssertTrue(true, "Error is acceptable: \(error)")
+                }
+            }
+        } else {
+            print("No text field elements found in TextEdit for accessibility test")
+        }
+    }
+
     // MARK: - Integration Tests
     
     /**

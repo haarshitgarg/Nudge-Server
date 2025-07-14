@@ -50,4 +50,22 @@ public actor NudgeLibrary {
         return try await StateManager.shared.updateUIElementTree(applicationIdentifier: bundleIdentifier, elementId: elementId)
     }
 
+    /// Set text in a UI element by its ID
+    public func setTextInElement(bundleIdentifier: String, elementId: String, text: String) async throws -> text_input_response {
+        return try await StateManager.shared.setTextInElement(applicationIdentifier: bundleIdentifier, elementId: elementId, text: text)
+    }
+
+    public func setTextInElement(arguments: [String: Value]) async throws -> text_input_response {
+        guard let bundleIdentifier = arguments["bundle_identifier"]?.stringValue else {
+            throw NudgeError.invalidArgument(parameter: "Dict", value: "arguements", reason: "Does not have a bundle_identifier")
+        }
+        guard let elementId = arguments["element_id"]?.stringValue else {
+            throw NudgeError.invalidArgument(parameter: "Dict", value: "arguements", reason: "Does not have a element_id")
+        }
+        guard let text = arguments["text"]?.stringValue else {
+            throw NudgeError.invalidArgument(parameter: "Dict", value: "arguements", reason: "Does not have a text")
+        }
+        return try await StateManager.shared.setTextInElement(applicationIdentifier: bundleIdentifier, elementId: elementId, text: text)
+    }
+
 }

@@ -54,6 +54,29 @@ public struct NavServerTools {
                 ]),
                 "required": .array(["bundle_identifier", "element_id"])
             ])
+        ),
+        
+        Tool(
+            name: "set_text_in_element",
+            description: "Use this tool to write text into text boxes, url location, mail area, code editor etc. It returns the updated UI tree after writing the text"
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "bundle_identifier": .object([
+                        "type": "string",
+                        "description": "Bundle identifier of application"
+                    ]),
+                    "element_id": .object([
+                        "type": "string",
+                        "description": "Element ID of the text field (obtained from get_ui_elements)"
+                    ]),
+                    "text": .object([
+                        "type": "string",
+                        "description": "Text to set in the text field"
+                    ])
+                ]),
+                "required": .array(["bundle_identifier", "element_id", "text"])
+            ])
         )
     ]
     
