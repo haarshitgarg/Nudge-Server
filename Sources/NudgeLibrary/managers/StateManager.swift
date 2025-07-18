@@ -534,6 +534,9 @@ public actor StateManager {
 
     /// Sets text in a UI element by its ID using direct AXUIElement reference
     public func setTextInElement(applicationIdentifier: String, elementId: String, text: String) async throws -> text_input_response {
+        // Delay after pressing Enter to allow page loading/processing
+        let delayAfterEnter: TimeInterval = 0.5
+        
         os_log("Setting text in element %{public}@ to: %{public}@", log: log, type: .debug, elementId, text)
 
         guard AXIsProcessTrusted() else {
@@ -579,8 +582,25 @@ public actor StateManager {
         
         if setValueResult == .success {
             os_log("Successfully set text using AXValue attribute", log: log, type: .info)
+            
+            // Perform enter operation after setting text
+            var message = "Successfully set text in element"
+            do {
+                try await performEnterOperation()
+                message += " and pressed Enter"
+                
+                // Add delay after enter to allow page loading
+                if delayAfterEnter > 0 {
+                    try await Task.sleep(for: .seconds(delayAfterEnter))
+                    message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                }
+            } catch {
+                os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                message += " but Enter operation failed"
+            }
+            
             let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-            return text_input_response(message: "Successfully set text in element", uiTree: uitree)
+            return text_input_response(message: message, uiTree: uitree)
         }
         
         // Fallback: Try using selected text attribute
@@ -596,8 +616,25 @@ public actor StateManager {
                 let replaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
                 if replaceResult == .success {
                     os_log("Successfully set text using selected text fallback", log: log, type: .info)
+                    
+                    // Perform enter operation after setting text
+                    var message = "Successfully set text in element (using fallback)"
+                    do {
+                        try await performEnterOperation()
+                        message += " and pressed Enter"
+                        
+                        // Add delay after enter to allow page loading
+                        if delayAfterEnter > 0 {
+                            try await Task.sleep(for: .seconds(delayAfterEnter))
+                            message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                        }
+                    } catch {
+                        os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                        message += " but Enter operation failed"
+                    }
+                    
                     let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-                    return text_input_response(message: "Successfully set text in element (using fallback)", uiTree: uitree)
+                    return text_input_response(message: message, uiTree: uitree)
                 }
             }
         }
@@ -606,12 +643,51 @@ public actor StateManager {
         let directReplaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
         if directReplaceResult == .success {
             os_log("Successfully set text using direct selected text", log: log, type: .info)
+            
+            // Perform enter operation after setting text
+            var message = "Successfully set text in element (using direct fallback)"
+            do {
+                try await performEnterOperation()
+                message += " and pressed Enter"
+                
+                // Add delay after enter to allow page loading
+                if delayAfterEnter > 0 {
+                    try await Task.sleep(for: .seconds(delayAfterEnter))
+                    message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                }
+            } catch {
+                os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                message += " but Enter operation failed"
+            }
+            
             let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-            return text_input_response(message: "Successfully set text in element (using direct fallback)", uiTree: uitree)
+            return text_input_response(message: message, uiTree: uitree)
         }
         
         os_log("All text setting methods failed for element %{public}@", log: log, type: .error, elementId)
         return text_input_response(message: "Failed to set text in element with ID: \(elementId)", uiTree: [])
+    }
+
+    /// Performs enter key press operation on a focused element
+    private func performEnterOperation() async throws {
+        os_log("Performing enter key press operation", log: log, type: .debug)
+        
+        // Create enter key press event
+        guard let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0x24, keyDown: true),
+              let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0x24, keyDown: false) else {
+            os_log("Failed to create enter key events", log: log, type: .error)
+            throw NudgeError.invalidRequest(message: "Failed to create enter key events")
+        }
+        
+        // Post the key events
+        keyDownEvent.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        keyUpEvent.post(tap: .cghidEventTap)
+        
+        // Small delay to allow the action to complete
+        try await Task.sleep(for: .milliseconds(100))
+        
+        os_log("Enter key press operation completed", log: log, type: .info)
     }
 
     /// Checks if an element exists in the registry (for testing)
