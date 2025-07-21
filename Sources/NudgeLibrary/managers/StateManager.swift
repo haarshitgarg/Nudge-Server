@@ -420,7 +420,6 @@ public actor StateManager {
         os_log("Current frontmost application: %@", log: log, type: .debug, bundleId ?? "unknown")
         return bundleId
     }
-    
     /// Performs coordinate-based double-click as fallback when accessibility actions fail
     private func performDoubleClickFallback(element: AXUIElement) async throws -> Bool {
         // Get element position

@@ -49,6 +49,18 @@ Updates and returns the UI element tree for a specific element by its ID. Call t
 
 **Use case:** When you need to explore deeper into the UI hierarchy of a specific element.
 
+### 4. `set_text_in_element`
+Sets text in a UI text field element by its ID. Works with text fields, search bars, URL fields, text areas, mail composition areas, code editors, and more.
+
+**Parameters:**
+- `bundle_identifier` (string, required): Bundle identifier of the application
+- `element_id` (string, required): Element ID of the text field (obtained from `get_ui_elements`)
+- `text` (string, required): Text to set in the text field
+
+**Returns:** Confirmation message and complete updated UI tree of the application.
+
+**Use case:** Write text into any text field across macOS applications - from code editors to email composition, URL bars to search fields.
+
 ## Setup and Installation
 
 ### As MCP Server
