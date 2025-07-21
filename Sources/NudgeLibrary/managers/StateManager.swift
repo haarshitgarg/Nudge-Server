@@ -409,6 +409,18 @@ public actor StateManager {
         return result == .success ? value : nil
     }
     
+    /// Gets the bundle identifier of the currently frontmost (active) application
+    private func getCurrentFrontmostApplication() -> String? {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            os_log("No frontmost application found", log: log, type: .error)
+            return nil
+        }
+        
+        let bundleId = frontmostApp.bundleIdentifier
+        os_log("Current frontmost application: %@", log: log, type: .debug, bundleId ?? "unknown")
+        return bundleId
+    }
+    
     /// Performs coordinate-based double-click as fallback when accessibility actions fail
     private func performDoubleClickFallback(element: AXUIElement) async throws -> Bool {
         // Get element position
@@ -497,8 +509,18 @@ public actor StateManager {
             do {
                 let doubleClickSuccess = try await performDoubleClickFallback(element: axElement)
                 if doubleClickSuccess {
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully opened project", uiTree: uitree)
+                    // Wait for UI changes to settle
+                    try await Task.sleep(for: .milliseconds(500))
+                    
+                    // Get the current frontmost application after the action
+                    let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                    let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                    
+                    let message = currentFrontmostApp != applicationIdentifier 
+                        ? "Successfully opened project - switched to \(currentFrontmostApp)"
+                        : "Successfully opened project"
+                    
+                    return click_response(message: message, uiTree: uitree)
                 }
             } catch {
                 os_log("Double-click failed: %{public}@", log: log, type: .error, error.localizedDescription)
@@ -507,7 +529,13 @@ public actor StateManager {
             // Fallback to selection (better than complete failure)
             let result = AXUIElementPerformAction(axElement, "AXShowDefaultUI" as CFString)
             if result == .success {
-                let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                // Wait for UI changes to settle
+                try await Task.sleep(for: .milliseconds(300))
+                
+                // Get complete UI tree for current frontmost app
+                let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                
                 return click_response(message: "Project selected (not opened - double-click failed)", uiTree: uitree)
             }
             
@@ -517,15 +545,35 @@ public actor StateManager {
         // For standard elements (buttons, etc.), use AXPress
         let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
         if result == .success {
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+            // Wait for UI changes to settle
+            try await Task.sleep(for: .milliseconds(300))
+            
+            // Get the current frontmost application after the action
+            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            
+            let message = currentFrontmostApp != applicationIdentifier 
+                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+                : "Successfully clicked the element"
+            
+            return click_response(message: message, uiTree: uitree)
         }
         
         // Simple fallback for standard elements
         let confirmResult = AXUIElementPerformAction(axElement, "AXConfirm" as CFString)
         if confirmResult == .success {
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+            // Wait for UI changes to settle
+            try await Task.sleep(for: .milliseconds(300))
+            
+            // Get the current frontmost application after the action
+            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            
+            let message = currentFrontmostApp != applicationIdentifier 
+                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+                : "Successfully clicked the element"
+            
+            return click_response(message: message, uiTree: uitree)
         }
         
         return click_response(message: "Failed to click element with ID: \(elementId)", uiTree: [])
