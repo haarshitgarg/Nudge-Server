@@ -409,6 +409,17 @@ public actor StateManager {
         return result == .success ? value : nil
     }
     
+    /// Gets the bundle identifier of the currently frontmost (active) application
+    private func getCurrentFrontmostApplication() -> String? {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            os_log("No frontmost application found", log: log, type: .error)
+            return nil
+        }
+        
+        let bundleId = frontmostApp.bundleIdentifier
+        os_log("Current frontmost application: %@", log: log, type: .debug, bundleId ?? "unknown")
+        return bundleId
+    }
     /// Performs coordinate-based double-click as fallback when accessibility actions fail
     private func performDoubleClickFallback(element: AXUIElement) async throws -> Bool {
         // Get element position
@@ -497,8 +508,18 @@ public actor StateManager {
             do {
                 let doubleClickSuccess = try await performDoubleClickFallback(element: axElement)
                 if doubleClickSuccess {
-                    let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-                    return click_response(message: "Successfully opened project", uiTree: uitree)
+                    // Wait for UI changes to settle
+                    try await Task.sleep(for: .milliseconds(500))
+                    
+                    // Get the current frontmost application after the action
+                    let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                    let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                    
+                    let message = currentFrontmostApp != applicationIdentifier 
+                        ? "Successfully opened project - switched to \(currentFrontmostApp)"
+                        : "Successfully opened project"
+                    
+                    return click_response(message: message, uiTree: uitree)
                 }
             } catch {
                 os_log("Double-click failed: %{public}@", log: log, type: .error, error.localizedDescription)
@@ -507,7 +528,13 @@ public actor StateManager {
             // Fallback to selection (better than complete failure)
             let result = AXUIElementPerformAction(axElement, "AXShowDefaultUI" as CFString)
             if result == .success {
-                let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
+                // Wait for UI changes to settle
+                try await Task.sleep(for: .milliseconds(300))
+                
+                // Get complete UI tree for current frontmost app
+                let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                
                 return click_response(message: "Project selected (not opened - double-click failed)", uiTree: uitree)
             }
             
@@ -517,15 +544,35 @@ public actor StateManager {
         // For standard elements (buttons, etc.), use AXPress
         let result = AXUIElementPerformAction(axElement, kAXPressAction as CFString)
         if result == .success {
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+            // Wait for UI changes to settle
+            try await Task.sleep(for: .milliseconds(300))
+            
+            // Get the current frontmost application after the action
+            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            
+            let message = currentFrontmostApp != applicationIdentifier 
+                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+                : "Successfully clicked the element"
+            
+            return click_response(message: message, uiTree: uitree)
         }
         
         // Simple fallback for standard elements
         let confirmResult = AXUIElementPerformAction(axElement, "AXConfirm" as CFString)
         if confirmResult == .success {
-            let uitree = try await updateUIElementTree(applicationIdentifier: applicationIdentifier, elementId: elementId)
-            return click_response(message: "Successfully clicked the element", uiTree: uitree)
+            // Wait for UI changes to settle
+            try await Task.sleep(for: .milliseconds(300))
+            
+            // Get the current frontmost application after the action
+            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            
+            let message = currentFrontmostApp != applicationIdentifier 
+                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+                : "Successfully clicked the element"
+            
+            return click_response(message: message, uiTree: uitree)
         }
         
         return click_response(message: "Failed to click element with ID: \(elementId)", uiTree: [])
@@ -534,6 +581,9 @@ public actor StateManager {
 
     /// Sets text in a UI element by its ID using direct AXUIElement reference
     public func setTextInElement(applicationIdentifier: String, elementId: String, text: String) async throws -> text_input_response {
+        // Delay after pressing Enter to allow page loading/processing
+        let delayAfterEnter: TimeInterval = 0.5
+        
         os_log("Setting text in element %{public}@ to: %{public}@", log: log, type: .debug, elementId, text)
 
         guard AXIsProcessTrusted() else {
@@ -579,8 +629,25 @@ public actor StateManager {
         
         if setValueResult == .success {
             os_log("Successfully set text using AXValue attribute", log: log, type: .info)
+            
+            // Perform enter operation after setting text
+            var message = "Successfully set text in element"
+            do {
+                try await performEnterOperation()
+                message += " and pressed Enter"
+                
+                // Add delay after enter to allow page loading
+                if delayAfterEnter > 0 {
+                    try await Task.sleep(for: .seconds(delayAfterEnter))
+                    message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                }
+            } catch {
+                os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                message += " but Enter operation failed"
+            }
+            
             let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-            return text_input_response(message: "Successfully set text in element", uiTree: uitree)
+            return text_input_response(message: message, uiTree: uitree)
         }
         
         // Fallback: Try using selected text attribute
@@ -596,8 +663,25 @@ public actor StateManager {
                 let replaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
                 if replaceResult == .success {
                     os_log("Successfully set text using selected text fallback", log: log, type: .info)
+                    
+                    // Perform enter operation after setting text
+                    var message = "Successfully set text in element (using fallback)"
+                    do {
+                        try await performEnterOperation()
+                        message += " and pressed Enter"
+                        
+                        // Add delay after enter to allow page loading
+                        if delayAfterEnter > 0 {
+                            try await Task.sleep(for: .seconds(delayAfterEnter))
+                            message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                        }
+                    } catch {
+                        os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                        message += " but Enter operation failed"
+                    }
+                    
                     let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-                    return text_input_response(message: "Successfully set text in element (using fallback)", uiTree: uitree)
+                    return text_input_response(message: message, uiTree: uitree)
                 }
             }
         }
@@ -606,12 +690,51 @@ public actor StateManager {
         let directReplaceResult = AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, text as CFString)
         if directReplaceResult == .success {
             os_log("Successfully set text using direct selected text", log: log, type: .info)
+            
+            // Perform enter operation after setting text
+            var message = "Successfully set text in element (using direct fallback)"
+            do {
+                try await performEnterOperation()
+                message += " and pressed Enter"
+                
+                // Add delay after enter to allow page loading
+                if delayAfterEnter > 0 {
+                    try await Task.sleep(for: .seconds(delayAfterEnter))
+                    message += " (waited \(Int(delayAfterEnter * 1000))ms for page to load)"
+                }
+            } catch {
+                os_log("Enter operation failed: %{public}@", log: log, type: .error, error.localizedDescription)
+                message += " but Enter operation failed"
+            }
+            
             let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
-            return text_input_response(message: "Successfully set text in element (using direct fallback)", uiTree: uitree)
+            return text_input_response(message: message, uiTree: uitree)
         }
         
         os_log("All text setting methods failed for element %{public}@", log: log, type: .error, elementId)
         return text_input_response(message: "Failed to set text in element with ID: \(elementId)", uiTree: [])
+    }
+
+    /// Performs enter key press operation on a focused element
+    private func performEnterOperation() async throws {
+        os_log("Performing enter key press operation", log: log, type: .debug)
+        
+        // Create enter key press event
+        guard let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0x24, keyDown: true),
+              let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0x24, keyDown: false) else {
+            os_log("Failed to create enter key events", log: log, type: .error)
+            throw NudgeError.invalidRequest(message: "Failed to create enter key events")
+        }
+        
+        // Post the key events
+        keyDownEvent.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        keyUpEvent.post(tap: .cghidEventTap)
+        
+        // Small delay to allow the action to complete
+        try await Task.sleep(for: .milliseconds(100))
+        
+        os_log("Enter key press operation completed", log: log, type: .info)
     }
 
     /// Checks if an element exists in the registry (for testing)

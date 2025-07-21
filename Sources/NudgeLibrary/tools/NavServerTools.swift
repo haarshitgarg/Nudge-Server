@@ -5,7 +5,7 @@ public struct NavServerTools {
     public static let tools: [Tool] = [
         Tool(
             name: "get_ui_elements",
-            description: "Get UI elements for an application in a tree structure with limited depth (2-3 levels). Automatically opens the application if not running, brings it to focus, and fills ui_state_tree with focused window, menu bar, and elements. Returns tree with only 3 fields: element_id, description, children. Use this function to get an overview of the application state - if you need more details about specific elements, use update_ui_element_tree.",
+            description: "Get UI elements for an application in a tree structure with limited depth (2-3 levels). Automatically opens the application if not running, brings it to focus, and fills ui_state_tree with elements from focused window and menu bar. Returns tree with only 3 fields: element_id, description, children. Use this function to get an overview of the application state and its UI elements",
             inputSchema: .object([
                 "type": "object",
                 "properties": .object([
