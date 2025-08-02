@@ -38,25 +38,6 @@ public struct NavServerTools {
         ),
         
         Tool(
-            name: "update_ui_element_tree",
-            description: "Update and return the UI element tree for a specific element by its ID. Call this function if you need more information about the children of a particular ui element. For example if from the available ui element id you feel like the final element must be under a certain element, call this function to get the updated tree.",
-            inputSchema: .object([
-                "type": "object",
-                "properties": .object([
-                    "bundle_identifier": .object([
-                        "type": "string",
-                        "description": "Bundle identifier of application"
-                    ]),
-                    "element_id": .object([
-                        "type": "string",
-                        "description": "Element ID to update and return tree from (obtained from get_ui_elements)"
-                    ])
-                ]),
-                "required": .array(["bundle_identifier", "element_id"])
-            ])
-        ),
-        
-        Tool(
             name: "set_text_in_element",
             description: "Use this tool to write text into text boxes, url location, mail area, code editor etc. It returns the updated UI tree after writing the text",
             inputSchema: .object([
