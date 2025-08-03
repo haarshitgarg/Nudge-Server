@@ -58,6 +58,25 @@ public struct NavServerTools {
                 ]),
                 "required": .array(["bundle_identifier", "element_id", "text"])
             ])
+        ),
+
+        Tool(
+            name: "save_to_clipboard",
+            description: "Use this tool to save any information that is required for later use by agent",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "message": .object([
+                        "type": "string",
+                        "description": "Information that needs to be saved on the clipboard"
+                    ]),
+                    "meta_information": .object([
+                        "type": "string",
+                        "description": "Meta information required to properly use the information on clipboard"
+                    ])
+                ]),
+                "required": .array(["message", "meta_information"])
+            ])
         )
     ]
     
