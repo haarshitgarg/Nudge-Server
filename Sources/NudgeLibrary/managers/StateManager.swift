@@ -516,8 +516,8 @@ public actor StateManager {
                     let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
                     
                     let message = currentFrontmostApp != applicationIdentifier 
-                        ? "Successfully opened project - switched to \(currentFrontmostApp)"
-                        : "Successfully opened project"
+                        ? "Successfully clicked - the UI switched to \(currentFrontmostApp)"
+                        : "Successfully clicked"
                     
                     return click_response(message: message, uiTree: uitree)
                 }
