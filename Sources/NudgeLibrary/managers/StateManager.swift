@@ -25,6 +25,7 @@ public actor StateManager {
         // Check if application is running, if not open it and wait for it to be fully registered
         if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
             os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
+            print("Auto-opening application \(applicationIdentifier)")
             try await openApplication(bundleIdentifier: applicationIdentifier)
             // Wait for the application to be fully registered in the system
             try await waitForApplication(bundleIdentifier: applicationIdentifier)
@@ -347,6 +348,11 @@ public actor StateManager {
         
         while retryCount < maxRetries {
             // Check if application is now running
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            if !apps.isEmpty {
+                print("App is running")
+                return
+            }
             if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) {
                 os_log("Application %@ is now running after %d retries", log: log, type: .info, bundleIdentifier, retryCount)
                 return
