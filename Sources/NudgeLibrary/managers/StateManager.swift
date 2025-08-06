@@ -375,22 +375,22 @@ public actor StateManager {
     /// Brings an application to the front/focus
     private func focusApplication(bundleIdentifier: String) async throws {
         // App is guaranteed to be running by this point (checked in getUIElements)
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) else {
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+        if !apps.isEmpty {
+            for app in apps {
+                if #available(macOS 14.0, *) {
+                    app.activate()
+                } else {
+                    app.activate(options: [.activateIgnoringOtherApps])
+                }
+                // Give the application time to come to the front
+                try await Task.sleep(for: .seconds(1))
+                os_log("Successfully focused application %@", log: log, type: .info, bundleIdentifier)
+            }
+        } else {
             os_log("Application %@ not found in running applications during focus", log: log, type: .error, bundleIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
         }
-        
-        // Activate the application to bring it to the front
-        if #available(macOS 14.0, *) {
-            app.activate()
-        } else {
-            app.activate(options: [.activateIgnoringOtherApps])
-        }
-        
-        // Give the application time to come to the front
-        try await Task.sleep(for: .seconds(1))
-        
-        os_log("Successfully focused application %@", log: log, type: .info, bundleIdentifier)
     }
     
     /// Generates a unique element ID
