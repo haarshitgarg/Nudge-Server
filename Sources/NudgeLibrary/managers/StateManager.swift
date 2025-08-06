@@ -73,7 +73,7 @@ public actor StateManager {
         var menuBarValue: CFTypeRef?
         let menuBarResult = AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
         if menuBarResult == .success, let menuBar = menuBarValue {
-            let menuElements = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth)
+            let menuElements = await buildUIElementTree(for: menuBar as! AXUIElement, applicationIdentifier: applicationIdentifier, maxDepth: maxDepth + 1)
             treeData.append(contentsOf: menuElements)
         }
 
