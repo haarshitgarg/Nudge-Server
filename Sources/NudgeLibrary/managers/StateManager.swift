@@ -21,9 +21,11 @@ public actor StateManager {
     /// Main method to get UI elements - checks if app is open, opens if not, fills tree structure
     public func getUIElements(applicationIdentifier: String) async throws -> [UIElementInfo] {
         os_log("Getting UI elements for %@", log: log, type: .debug, applicationIdentifier)
-        
+
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: applicationIdentifier)
+
         // Check if application is running, if not open it and wait for it to be fully registered
-        if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
+        if apps.isEmpty {
             os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
             print("Auto-opening application \(applicationIdentifier)")
             try await openApplication(bundleIdentifier: applicationIdentifier)
@@ -50,10 +52,13 @@ public actor StateManager {
         }
 
         // App is guaranteed to be running by this point (checked in getUIElements)
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: applicationIdentifier)
+        if apps.isEmpty {
             os_log("Application %@ not found in running applications during tree fill", log: log, type: .error, applicationIdentifier)
             throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
+
+        let app = apps.first!
 
         // Clear existing elements for this application
         clearElementsForApplication(applicationIdentifier)
@@ -389,6 +394,7 @@ public actor StateManager {
             }
         } else {
             os_log("Application %@ not found in running applications during focus", log: log, type: .error, bundleIdentifier)
+            print("Application \(bundleIdentifier) not found in running applications during focus")
             throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
         }
     }
