@@ -38,6 +38,7 @@ final class ApplicationAutoOpeningTests: XCTestCase {
         if wasRunningBefore {
             if let calendarApp = NSRunningApplication.runningApplications(withBundleIdentifier: appIdentifier).first {
                 calendarApp.terminate()
+                print("Terminating the calendar app")
                 // Wait a moment for the app to close
                 try await Task.sleep(for: .seconds(2))
             }
