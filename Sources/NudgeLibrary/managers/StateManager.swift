@@ -21,37 +21,40 @@ public actor StateManager {
     /// Main method to get UI elements - checks if app is open, opens if not, fills tree structure
     public func getUIElements(applicationIdentifier: String) async throws -> [UIElementInfo] {
         os_log("Getting UI elements for %@", log: log, type: .debug, applicationIdentifier)
-        
+        os_log("Getting UI elements for \(applicationIdentifier)")
+
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: applicationIdentifier)
+
+        var app = NSRunningApplication.init()
+
         // Check if application is running, if not open it and wait for it to be fully registered
-        if !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) {
+        if apps.isEmpty {
             os_log("Auto-opening application %@", log: log, type: .info, applicationIdentifier)
-            try await openApplication(bundleIdentifier: applicationIdentifier)
+            print("Auto-opening application \(applicationIdentifier)")
+            app = try await openApplication(bundleIdentifier: applicationIdentifier)
+            try await Task.sleep(for: .seconds(1))
             // Wait for the application to be fully registered in the system
-            try await waitForApplication(bundleIdentifier: applicationIdentifier)
+            //try await waitForApplication(bundleIdentifier: applicationIdentifier)
         }
-        
-        // Bring application to front/focus
-        try await focusApplication(bundleIdentifier: applicationIdentifier)
-        
+        else {
+            // Bring application to front/focus
+            app = NSRunningApplication.runningApplications(withBundleIdentifier: applicationIdentifier).first!
+            app.activate()
+        }
+
         // Fill the UI state tree with focused window, menu bar, and elements (limited depth)
-        try await fillUIStateTree(applicationIdentifier: applicationIdentifier, maxDepth: 2)
+        try await fillUIStateTree(applicationIdentifier: applicationIdentifier, maxDepth: 2, app: app)
         
         // Return the tree structure
         return uiStateTrees[applicationIdentifier]?.treeData ?? []
     }
     
     /// Fills the UI state tree with focused window, menu bar, and elements in tree-based format
-    private func fillUIStateTree(applicationIdentifier: String, maxDepth: Int = Int.max) async throws {
+    private func fillUIStateTree(applicationIdentifier: String, maxDepth: Int = Int.max, app: NSRunningApplication) async throws {
         os_log("Filling UI state tree for %@ with max depth %d", log: log, type: .debug, applicationIdentifier, maxDepth)
 
         guard AXIsProcessTrusted() else {
             throw NudgeError.accessibilityPermissionDenied
-        }
-
-        // App is guaranteed to be running by this point (checked in getUIElements)
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == applicationIdentifier.lowercased() }) else {
-            os_log("Application %@ not found in running applications during tree fill", log: log, type: .error, applicationIdentifier)
-            throw NudgeError.applicationNotRunning(bundleIdentifier: applicationIdentifier)
         }
 
         // Clear existing elements for this application
@@ -325,7 +328,7 @@ public actor StateManager {
     }
 
     /// Opens an application by bundle identifier
-    private func openApplication(bundleIdentifier: String) async throws {
+    private func openApplication(bundleIdentifier: String) async throws -> NSRunningApplication {
         let workspace = NSWorkspace.shared
         
         guard let url = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
@@ -333,7 +336,7 @@ public actor StateManager {
         }
         
         do {
-            try await workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return try await workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         } catch {
             throw NudgeError.applicationNotFound(bundleIdentifier: bundleIdentifier)
         }
@@ -347,6 +350,11 @@ public actor StateManager {
         
         while retryCount < maxRetries {
             // Check if application is now running
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            if !apps.isEmpty {
+                print("App is running")
+                return
+            }
             if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) {
                 os_log("Application %@ is now running after %d retries", log: log, type: .info, bundleIdentifier, retryCount)
                 return
@@ -369,22 +377,22 @@ public actor StateManager {
     /// Brings an application to the front/focus
     private func focusApplication(bundleIdentifier: String) async throws {
         // App is guaranteed to be running by this point (checked in getUIElements)
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased() }) else {
-            os_log("Application %@ not found in running applications during focus", log: log, type: .error, bundleIdentifier)
-            throw NudgeError.applicationNotRunning(bundleIdentifier: bundleIdentifier)
-        }
-        
-        // Activate the application to bring it to the front
-        if #available(macOS 14.0, *) {
-            app.activate()
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+        if !apps.isEmpty {
+            for app in apps {
+                if #available(macOS 14.0, *) {
+                    app.activate()
+                } else {
+                    app.activate(options: [.activateIgnoringOtherApps])
+                }
+                // Give the application time to come to the front
+                try await Task.sleep(for: .seconds(1))
+                os_log("Successfully focused application %@", log: log, type: .info, bundleIdentifier)
+            }
         } else {
-            app.activate(options: [.activateIgnoringOtherApps])
+            os_log("Application %@ not found in running applications during focus", log: log, type: .error, bundleIdentifier)
+            print("Application \(bundleIdentifier) not found in running applications during focus")
         }
-        
-        // Give the application time to come to the front
-        try await Task.sleep(for: .seconds(1))
-        
-        os_log("Successfully focused application %@", log: log, type: .info, bundleIdentifier)
     }
     
     /// Generates a unique element ID
