@@ -162,7 +162,7 @@ public actor StateManager {
         }
         
         // Only return elements that are actionable or have actionable children
-        if isElementActionable(element) || !children.isEmpty {
+        if (isElementActionable(element) && description != "" ) || !children.isEmpty {
             return [UIElementInfo(
                 element_id: elementId,
                 description: description,
@@ -184,6 +184,10 @@ public actor StateManager {
         let help = getAttribute(element, kAXHelpAttribute) as? String
         let description = getAttribute(element, kAXDescriptionAttribute) as? String
         let url = getAttribute(element, kAXURLAttribute)
+
+        if(title == nil && value == nil && help == nil && description == nil) {
+            return ""
+        }
         
         // Build description prioritizing most important info
         if let title = title, !title.isEmpty {
