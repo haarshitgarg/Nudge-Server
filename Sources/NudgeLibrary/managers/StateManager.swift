@@ -212,7 +212,8 @@ public actor StateManager {
             descriptionParts.append("- \(description)")
         }
         
-        return descriptionParts.joined(separator: ", ")
+        let fullDescription = descriptionParts.joined(separator: ", ")
+        return String(fullDescription.prefix(200))
     }
     
     /// Extracts useful information from children elements (used for AXCell, AXRow, AXColumn)
