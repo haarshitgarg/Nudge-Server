@@ -418,6 +418,7 @@ public actor StateManager {
     }
     
     /// Gets the bundle identifier of the currently frontmost (active) application
+    //  TODO: NOT USED CURRENTLY. Maybe I need to remove it later
     private func getCurrentFrontmostApplication() -> String? {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             os_log("No frontmost application found", log: log, type: .error)
@@ -520,12 +521,13 @@ public actor StateManager {
                     try await Task.sleep(for: .milliseconds(500))
                     
                     // Get the current frontmost application after the action
-                    let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
-                    let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                    //let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                    let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
                     
-                    let message = currentFrontmostApp != applicationIdentifier 
-                        ? "Successfully clicked - the UI switched to \(currentFrontmostApp)"
-                        : "Successfully clicked"
+                    //let message = currentFrontmostApp != applicationIdentifier 
+                    //    ? "Successfully clicked - the UI switched to \(currentFrontmostApp)"
+                    //    : "Successfully clicked"
+                    let message = "Successfully clicked the button"
                     
                     return click_response(message: message, uiTree: uitree)
                 }
@@ -540,8 +542,8 @@ public actor StateManager {
                 try await Task.sleep(for: .milliseconds(300))
                 
                 // Get complete UI tree for current frontmost app
-                let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
-                let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+                //let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+                let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
                 
                 return click_response(message: "Project selected (not opened - double-click failed)", uiTree: uitree)
             }
@@ -556,12 +558,13 @@ public actor StateManager {
             try await Task.sleep(for: .milliseconds(300))
             
             // Get the current frontmost application after the action
-            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
-            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            //let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
             
-            let message = currentFrontmostApp != applicationIdentifier 
-                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
-                : "Successfully clicked the element"
+            //let message = currentFrontmostApp != applicationIdentifier 
+            //    ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+            //    : "Successfully clicked the element"
+            let message = "Successfully clicked the element"
             
             return click_response(message: message, uiTree: uitree)
         }
@@ -573,13 +576,13 @@ public actor StateManager {
             try await Task.sleep(for: .milliseconds(300))
             
             // Get the current frontmost application after the action
-            let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
-            let uitree = try await getUIElements(applicationIdentifier: currentFrontmostApp)
+            //let currentFrontmostApp = getCurrentFrontmostApplication() ?? applicationIdentifier
+            let uitree = try await getUIElements(applicationIdentifier: applicationIdentifier)
             
-            let message = currentFrontmostApp != applicationIdentifier 
-                ? "Successfully clicked element - switched to \(currentFrontmostApp)"
-                : "Successfully clicked the element"
-            
+            //let message = currentFrontmostApp != applicationIdentifier 
+            //    ? "Successfully clicked element - switched to \(currentFrontmostApp)"
+            //    : "Successfully clicked the element"
+            let message = "Successfully clicked the element"
             return click_response(message: message, uiTree: uitree)
         }
         
