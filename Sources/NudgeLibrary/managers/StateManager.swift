@@ -183,6 +183,7 @@ public actor StateManager {
         let role = getAttribute(element, kAXRoleAttribute) as? String
         let help = getAttribute(element, kAXHelpAttribute) as? String
         let description = getAttribute(element, kAXDescriptionAttribute) as? String
+        let url = getAttribute(element, kAXURLAttribute)
         
         // Build description prioritizing most important info
         if let title = title, !title.isEmpty {
@@ -210,6 +211,10 @@ public actor StateManager {
             descriptionParts.append("- \(help)")
         } else if let description = description, !description.isEmpty, description != title {
             descriptionParts.append("- \(description)")
+        }
+
+        if let url = url {
+            descriptionParts.append("- \(url)")
         }
         
         return descriptionParts.joined(separator: ", ")
