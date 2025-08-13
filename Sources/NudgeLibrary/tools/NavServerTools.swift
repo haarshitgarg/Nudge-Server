@@ -77,6 +77,21 @@ public struct NavServerTools {
                 ]),
                 "required": .array(["message", "meta_information"])
             ])
+        ),
+
+        Tool(
+            name: "ask_user",
+            description: "Use this tool to ask user incase more context is required or there is confusion or the agent requires some confirmation etc.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "message": .object([
+                        "type": "string",
+                        "description": "Message/question to be asked to user"
+                    ])
+                ]),
+                "required": .array(["message"])
+            ])
         )
     ]
     
