@@ -1,12 +1,58 @@
 import Foundation
 import MCP
 
+public struct ToolParameters {
+    public var name: String
+    public var type: String
+    public var description: String
+    public var required: Bool
+
+    public init(name: String, type: String, description: String, required: Bool) {
+        self.name = name
+        self.type = type
+        self.description = description
+        self.required = required
+    }
+}
+
 public actor NudgeLibrary {
     static public let shared: NudgeLibrary = NudgeLibrary()
+    var tools: [Tool] = []
     private init() {}
 
+    public func addTool(name: String, description: String, parameters: [ToolParameters]?) {
+        var params: [String: Value] = [:]
+        var required: [Value] = []
+        if let parameters = parameters {
+            for para in parameters {
+                params[para.name] = .object([
+                    "type" : .string(para.type),
+                    "description": .string(para.description)
+                ])
+
+                if para.required {
+                    required.append(.string(para.name))
+                }
+            }
+        }
+
+        let tool = Tool(
+            name: "\(name)",
+            description: "\(description)",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object(params),
+                "required": .array(required)
+            ])
+        )
+
+        self.tools.append(tool)
+    }
+
     public func getNavTools() -> [Tool] {
-        return NavServerTools.getAllTools()
+        var curr_tools = NavServerTools.getAllTools()
+        curr_tools.append(contentsOf: self.tools)
+        return curr_tools
     }
 
     public func getUIElements(bundleIdentifier: String) async throws -> [UIElementInfo] {
