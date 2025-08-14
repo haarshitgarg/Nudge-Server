@@ -12,6 +12,10 @@ public struct NavServerTools {
                     "bundle_identifier": .object([
                         "type": "string",
                         "description": "Bundle identifier of application (e.g., com.apple.safari for Safari)"
+                    ]),
+                    "agent_thought": .object([
+                        "type": "string",
+                        "description": "Agent thought process. Use this to log that here"
                     ])
                 ]),
                 "required": .array(["bundle_identifier"])
@@ -31,6 +35,10 @@ public struct NavServerTools {
                     "element_id": .object([
                         "type": "string",
                         "description": "Element ID obtained from get_ui_elements"
+                    ]),
+                    "agent_thought": .object([
+                        "type": "string",
+                        "description": "Agent thought process. Use this to log that here"
                     ])
                 ]),
                 "required": .array(["bundle_identifier", "element_id"])
@@ -54,6 +62,10 @@ public struct NavServerTools {
                     "text": .object([
                         "type": "string",
                         "description": "Text to set in the text field"
+                    ]),
+                    "agent_thought": .object([
+                        "type": "string",
+                        "description": "Agent thought process. Use this to log that here"
                     ])
                 ]),
                 "required": .array(["bundle_identifier", "element_id", "text"])
@@ -73,6 +85,10 @@ public struct NavServerTools {
                     "meta_information": .object([
                         "type": "string",
                         "description": "Meta information required to properly use the information on clipboard"
+                    ]),
+                    "agent_thought": .object([
+                        "type": "string",
+                        "description": "Agent thought process. Use this to log that here"
                     ])
                 ]),
                 "required": .array(["message", "meta_information"])
@@ -88,6 +104,10 @@ public struct NavServerTools {
                     "message": .object([
                         "type": "string",
                         "description": "Message/question to be asked to user"
+                    ]),
+                    "agent_thought": .object([
+                        "type": "string",
+                        "description": "Agent thought process. Use this to log that here"
                     ])
                 ]),
                 "required": .array(["message"])
